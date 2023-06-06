@@ -13,4 +13,4 @@ stm32f4xx-hal = { version = "*", features = ["stm32f411"] }
 rtt-target = { version = "*", features = ["cortex-m"] }
 panic-rtt-target = { version = "*", features = ["cortex-m"] }
 
-lcd1602-hal = { path = "../.." }
+lcd1602-driver = { path = "../.." }

@@ -31,7 +31,7 @@ use lcd1602_driver::{
     command_set::{Font, LineMode, MoveDirection, ShiftType, State},
     pins::{FourPinsAPI, Pins},
     utils::BitOps,
-    FlapType, LCDAnimation, LCDBasic, LCDExt, MoveType,
+    FlipType, LCDAnimation, LCDBasic, LCDExt, MoveType,
 };
 
 #[cortex_m_rt::entry]
@@ -122,8 +122,8 @@ fn main() -> ! {
     lcd.set_cursor_pos((15, 1));
     lcd.typewriter_write("~!", 250_000);
     // 测试两种滚动写入
-    lcd.split_flap_write("2061", FlapType::Simultaneous, 0, 150_000, None);
-    lcd.split_flap_write("DCL", FlapType::Sequential, 10, 150_000, Some(250_000));
+    lcd.split_flap_write("2061", FlipType::Simultaneous, 0, 150_000, None);
+    lcd.split_flap_write("DCL", FlipType::Sequential, 10, 150_000, Some(250_000));
 
     lcd.set_cursor_state(State::Off);
 

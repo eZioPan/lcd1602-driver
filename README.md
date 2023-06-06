@@ -2,9 +2,13 @@
 
 An embedded-hal based driver for the LCD1602 display
 
+### NOTE
+
+The most common functions have been implemented, but this crate is still in a very early stage of development, so the API and functionality may change.
+
 ## Features
 
-- Covers every instruction of the LCD1602
+- Covers every(?) instruction of the LCD1602
   - 4 Pin / 8 Pin mode
   - 1 line / 2 line display
   - left to right / right to left writing
@@ -27,7 +31,7 @@ An embedded-hal based driver for the LCD1602 display
   - Toggle the display of the entire display on/off
 - Some simple animation effects
   - Delay execution (microseconds/milliseconds)
-  - Full-screen flashing (continuous/specific number of times)
+  - Full-screen flashing (endless/specific number of times)
   - Typewriter-style string display
   - Split-flap-style string display (one by one/simultaneously)
 - And more...

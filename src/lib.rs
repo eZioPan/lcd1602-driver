@@ -1,3 +1,29 @@
+/*!
+# LCD 1602 Driver
+
+Basic Usage:
+
+1. Initialize pins:
+   * Initialize three push-pull pins for **RS** / **RW** / **E** of LCD1602
+   * Initialize 8 or 4 open-drain pins for DB0~DB7 or DB4~DB7 of LCD1602
+   * Initialize a delay timer(which implement [embedded_hal::blocking::delay])
+2. Use [8 pin Pins::new()] or [4 pin Pins::new()] to create a [Pins] struct containing all initialized pins
+3. Use the [Builder::new()] to create a [Builder] struct with [Pins] and the delay timer
+4. Use the functions provided by [Builder] to configure the initial state of the LCD1602
+5. Use the [.build_and_init()] to convert the [Builder] to an [LCD] struct, and initialize the LCD1602
+6. Use [LCD] struct:
+   * [LCDBasic] trait provides functions close to LCD1602 instructions
+   * [LCDExt] trait provides commonly used **non-animation** functions
+   * [LCDAnimation] trait provides simple **animation** functions
+
+
+[8 pin Pins::new()]: crate::pins::EightPinsAPI::new()
+[4 pin Pins::new()]: crate::pins::FourPinsAPI::new()
+[Builder::new()]: crate::builder::BuilderAPI::new()
+[Builder]: crate::builder::Builder
+[.build_and_init()]: crate::builder::BuilderAPI::build_and_init()
+*/
+
 #![no_std]
 
 use embedded_hal::{
@@ -22,6 +48,7 @@ mod impl_struct_api;
 pub mod pins;
 pub mod utils;
 
+/// The main struct for operating the LCD1602
 pub struct LCD<ControlPin, DBPin, const PIN_CNT: usize, Delayer>
 where
     ControlPin: OutputPin,
@@ -56,30 +83,67 @@ pub enum MoveType {
     Shortest,
 }
 
-pub enum FlapType {
+pub enum FlipType {
     Sequential,
     Simultaneous,
 }
 
+/// The [LCDAnimation] trait provides methods for animating the display
 pub trait LCDAnimation {
-    fn full_display_blink(&mut self, count: u32, change_interval_us: u32);
-    fn typewriter_write(&mut self, str: &str, extra_delay_us: u32);
+    /// Make the entire screen blink
+    ///
+    /// # Arguments
+    ///
+    /// * `count` - the number of times to blink the screen. If the value is `0`, the screen will blink endless.
+    /// * `interval_us` - The interval (in microseconds) at which the screen state changes
+    fn full_display_blink(&mut self, count: u32, interval_us: u32);
+
+    /// Typewriter-style display
+    ///
+    /// # Arguments
+    ///
+    /// * `str` - string to display
+    /// * `delay_us` - The interval (in microseconds) of each character show up
+    fn typewriter_write(&mut self, str: &str, delay_us: u32);
+
+    /// Split-Flap-style display
+    ///
+    /// # Arguments
+    ///
+    /// * `str` - string to display
+    /// * `ft` - flip type, see [FlipType]
+    /// * `max_flap_cnt` - The maximum number of times to flip the display before reaching the target character
+    /// * `per_flap_delay_us` - The delay (in microseconds) between each flip. It is recommended to set this value to at least `100_000`.
+    /// * `per_char_flap_delay_us` - Used in [FlipType::Sequential] mode, this is the time (in microseconds) to wait between flipping each character
     fn split_flap_write(
         &mut self,
         str: &str,
-        ft: FlapType,
+        ft: FlipType,
         max_flap_cnt: u8,
         per_flap_delay_us: u32,
         per_char_flap_delay_us: Option<u32>,
     );
+
+    /// Move the display window to the specified position (measured from the upper-left corner of the display)
+    ///
+    /// # Arguments
+    ///
+    /// * `target_pos` - The target position of the display window
+    /// * `mt` - The type of movement, see [MoveType]
+    /// * `display_state_when_shift` - Whether to turn off the screen during the move
+    /// * `delay_us_per_step` - The delay (in microseconds) between each step of the move
     fn shift_display_to_pos(
         &mut self,
-        target_offset: u8,
+        target_pos: u8,
         mt: MoveType,
         display_state_when_shift: State,
         delay_us_per_step: u32,
     );
+
+    /// Wait for specified milliseconds
     fn delay_ms(&mut self, ms: u32);
+
+    /// Wait for specified microseconds
     fn delay_us(&mut self, us: u32);
 }
 

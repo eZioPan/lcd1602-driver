@@ -5,7 +5,7 @@ use embedded_hal::{
 
 use super::{
     command_set::{LineMode, MoveDirection, ShiftType, State},
-    FlapType, LCDAnimation, LCDBasic, LCDExt, MoveType, StructUtils, LCD,
+    FlipType, LCDAnimation, LCDBasic, LCDExt, MoveType, StructUtils, LCD,
 };
 
 impl<ControlPin, DBPin, const PIN_CNT: usize, Delayer> LCDAnimation
@@ -15,8 +15,6 @@ where
     DBPin: OutputPin + InputPin,
     Delayer: DelayMs<u32> + DelayUs<u32>,
 {
-    /// 以特定的时间间隔，切换整个屏幕特定次数
-    /// 当 count 为 0 时，永续切换屏幕
     fn full_display_blink(&mut self, count: u32, interval_us: u32) {
         match count == 0 {
             true => loop {
@@ -32,9 +30,9 @@ where
         }
     }
 
-    fn typewriter_write(&mut self, str: &str, extra_delay_us: u32) {
+    fn typewriter_write(&mut self, str: &str, delay_us: u32) {
         str.chars().for_each(|char| {
-            self.delay_us(extra_delay_us);
+            self.delay_us(delay_us);
             self.write_char_to_cur(char);
         })
     }
@@ -42,7 +40,7 @@ where
     fn split_flap_write(
         &mut self,
         str: &str,
-        ft: FlapType,
+        ft: FlipType,
         max_flap_count: u8,
         per_flap_delay_us: u32,
         per_char_delay_us: Option<u32>,
@@ -63,7 +61,7 @@ where
         }
 
         match ft {
-            FlapType::Sequential => {
+            FlipType::Sequential => {
                 assert!(
                     per_char_delay_us.is_some(),
                     "Should set some per char delay in Sequential Mode"
@@ -92,7 +90,7 @@ where
                     );
                 })
             }
-            FlapType::Simultaneous => {
+            FlipType::Simultaneous => {
                 let min_char_byte = str.chars().min().unwrap() as u8;
                 let max_char_byte = str.chars().max().unwrap() as u8;
                 let str_len = str.chars().count();
@@ -149,29 +147,29 @@ where
 
     fn shift_display_to_pos(
         &mut self,
-        target_offset: u8,
+        target_pos: u8,
         mt: MoveType,
         display_state_when_shift: State,
         delay_us_per_step: u32,
     ) {
-        let before_offset = self.get_display_offset();
+        let before_pos = self.get_display_offset();
 
         // 如果当前的 offset 和指定的 offset 相同，直接返回即可
-        if before_offset == target_offset {
+        if before_pos == target_pos {
             return;
         }
 
         let line_capacity = match self.get_line_mode() {
             LineMode::OneLine => {
                 assert!(
-                    target_offset < 80,
+                    target_pos < 80,
                     "display offset too big, should less than 80"
                 );
                 80
             }
             LineMode::TwoLine => {
                 assert!(
-                    target_offset < 40,
+                    target_pos < 40,
                     "display offset too big, should less than 40"
                 );
                 40
@@ -186,51 +184,51 @@ where
         // 没有必要在这里反复操作设备，这里只需要计算移动的距离和方向即可
         let (distance, direction) = match mt {
             MoveType::ForceMoveLeft => {
-                if target_offset < before_offset {
-                    (before_offset - target_offset, MoveDirection::RightToLeft)
+                if target_pos < before_pos {
+                    (before_pos - target_pos, MoveDirection::RightToLeft)
                 } else {
                     (
-                        line_capacity - (target_offset - before_offset),
+                        line_capacity - (target_pos - before_pos),
                         MoveDirection::RightToLeft,
                     )
                 }
             }
 
             MoveType::ForceMoveRight => {
-                if target_offset > before_offset {
-                    (target_offset - before_offset, MoveDirection::LeftToRight)
+                if target_pos > before_pos {
+                    (target_pos - before_pos, MoveDirection::LeftToRight)
                 } else {
                     (
-                        line_capacity - (before_offset - target_offset),
+                        line_capacity - (before_pos - target_pos),
                         MoveDirection::LeftToRight,
                     )
                 }
             }
 
             MoveType::NoCrossBoundary => {
-                if target_offset > before_offset {
-                    (target_offset - before_offset, MoveDirection::LeftToRight)
+                if target_pos > before_pos {
+                    (target_pos - before_pos, MoveDirection::LeftToRight)
                 } else {
-                    (before_offset - target_offset, MoveDirection::RightToLeft)
+                    (before_pos - target_pos, MoveDirection::RightToLeft)
                 }
             }
 
             MoveType::Shortest => {
-                if target_offset > before_offset {
-                    if target_offset - before_offset <= line_capacity / 2 {
-                        (target_offset - before_offset, MoveDirection::LeftToRight)
+                if target_pos > before_pos {
+                    if target_pos - before_pos <= line_capacity / 2 {
+                        (target_pos - before_pos, MoveDirection::LeftToRight)
                     } else {
                         (
-                            line_capacity - (target_offset - before_offset),
+                            line_capacity - (target_pos - before_pos),
                             MoveDirection::RightToLeft,
                         )
                     }
                 } else {
-                    if before_offset - target_offset <= line_capacity / 2 {
-                        (before_offset - target_offset, MoveDirection::RightToLeft)
+                    if before_pos - target_pos <= line_capacity / 2 {
+                        (before_pos - target_pos, MoveDirection::RightToLeft)
                     } else {
                         (
-                            line_capacity - (before_offset - target_offset),
+                            line_capacity - (before_pos - target_pos),
                             MoveDirection::LeftToRight,
                         )
                     }

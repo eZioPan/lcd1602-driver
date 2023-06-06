@@ -35,8 +35,8 @@ where
     DBPin: OutputPin + InputPin,
     Delayer: DelayMs<u32> + DelayUs<u32>,
 {
-    fn build_and_init(self) -> LCD<ControlPin, DBPin, PIN_CNT, Delayer>;
     fn new(pins: Pins<ControlPin, DBPin, PIN_CNT>, delayer: Delayer) -> Self;
+    fn build_and_init(self) -> LCD<ControlPin, DBPin, PIN_CNT, Delayer>;
     fn pop_pins(&mut self) -> Pins<ControlPin, DBPin, PIN_CNT>;
     fn pop_delayer(&mut self) -> Delayer;
     fn set_line(self, line: LineMode) -> Self;
