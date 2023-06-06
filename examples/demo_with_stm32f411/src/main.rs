@@ -26,7 +26,7 @@ use panic_rtt_target as _;
 use rtt_target::rtt_init_print;
 use stm32f4xx_hal::{pac, prelude::*};
 
-use lcd1602_hal::{
+use lcd1602_driver::{
     builder::{Builder, BuilderAPI},
     command_set::{Font, LineMode, MoveDirection, ShiftType, State},
     pins::{FourPinsAPI, Pins},
