@@ -1,3 +1,5 @@
+//! the builder pattern to build a [LCD]
+
 use embedded_hal::{
     blocking::delay::{DelayMs, DelayUs},
     digital::v2::{InputPin, OutputPin},
@@ -6,11 +8,12 @@ use embedded_hal::{
 mod impl_builder_api;
 
 use super::{
-    command_set::{Font, LineMode, MoveDirection, ShiftType, State},
+    enums::basic_command::{Font, LineMode, MoveDirection, ShiftType, State},
     pins::Pins,
     LCD,
 };
 
+/// struct which collect infomation to build [LCD][crate::LCD] and initialize LCD1602
 pub struct Builder<ControlPin, DBPin, const PIN_CNT: usize, Delayer>
 where
     ControlPin: OutputPin,
@@ -35,8 +38,16 @@ where
     DBPin: OutputPin + InputPin,
     Delayer: DelayMs<u32> + DelayUs<u32>,
 {
+    /// combine [Pins] and delay timer into a [Builder]
     fn new(pins: Pins<ControlPin, DBPin, PIN_CNT>, delayer: Delayer) -> Self;
+    /// consume [Builder], build a [LCD][crate::LCD] and initialize LCD1602
     fn build_and_init(self) -> LCD<ControlPin, DBPin, PIN_CNT, Delayer>;
+    /// when LCD1602 report busy state, wait some time before poll the state again
+    /// this function set interval (in microseconds) between 2 polls
+    fn set_wait_interval_us(self, interval: u32) -> Self;
+    /// when LCD1602 report busy state, wait some time before poll the state again
+    /// this function get interval value (in microseconds)
+    fn get_wait_interval_us(&self) -> u32;
     fn pop_pins(&mut self) -> Pins<ControlPin, DBPin, PIN_CNT>;
     fn pop_delayer(&mut self) -> Delayer;
     fn set_line(self, line: LineMode) -> Self;
@@ -53,6 +64,4 @@ where
     fn get_direction(&self) -> MoveDirection;
     fn set_shift(self, shift: ShiftType) -> Self;
     fn get_shift(&self) -> ShiftType;
-    fn set_wait_interval_us(self, interval: u32) -> Self;
-    fn get_wait_interval_us(&self) -> u32;
 }

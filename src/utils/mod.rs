@@ -1,3 +1,5 @@
+//! common tools
+
 mod impls;
 
 pub enum BitState {
@@ -5,6 +7,7 @@ pub enum BitState {
     Set,
 }
 
+/// simple bit ops
 pub trait BitOps {
     fn set_bit(&mut self, pos: u8);
     fn clear_bit(&mut self, pos: u8);

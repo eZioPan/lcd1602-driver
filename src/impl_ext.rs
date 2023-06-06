@@ -4,8 +4,8 @@ use embedded_hal::{
 };
 
 use super::{
-    command_set::{CommandSet, State},
-    LCDBasic, LCDExt, PinsInteraction, RAMType, StructAPI, LCD,
+    command_set::CommandSet, enums::basic_command::State, LCDBasic, LCDExt, PinsInteraction,
+    RAMType, StructAPI, LCD,
 };
 
 impl<ControlPin, DBPin, const PIN_CNT: usize, Delayer> LCDExt
@@ -22,12 +22,17 @@ where
         }
     }
 
-    fn write_str(&mut self, str: &str) {
+    fn write_str_to_cur(&mut self, str: &str) {
         str.chars().for_each(|char| self.write_char_to_cur(char));
     }
 
-    /// 这里的字符仅覆盖了如下范围：
-    /// ASCII 0x20 到 0x7D
+    fn write_str_to_pos(&mut self, str: &str, pos: (u8, u8)) {
+        self.set_cursor_pos(pos);
+        self.write_str_to_cur(str);
+    }
+
+    /// In this implementation, character only support
+    /// from ASCII 0x20 (white space) to ASCII 0x7D (`}`)
     fn write_char_to_cur(&mut self, char: char) {
         assert!(
             self.get_ram_type() == RAMType::DDRAM,
@@ -45,10 +50,10 @@ where
 
     fn write_graph_to_pos(&mut self, index: u8, pos: (u8, u8)) {
         assert!(index < 8, "Only 8 graphs allowed in CGRAM");
-        self.write_u8_to_pos(index, pos);
+        self.write_byte_to_pos(index, pos);
     }
 
-    fn write_u8_to_pos(&mut self, byte: impl Into<u8>, pos: (u8, u8)) {
+    fn write_byte_to_pos(&mut self, byte: impl Into<u8>, pos: (u8, u8)) {
         self.set_cursor_pos(pos);
         self.wait_and_send(CommandSet::WriteDataToRAM(byte.into()));
     }
@@ -58,7 +63,7 @@ where
         self.write_char_to_cur(char);
     }
 
-    fn read_u8_from_pos(&mut self, pos: (u8, u8)) -> u8 {
+    fn read_byte_from_pos(&mut self, pos: (u8, u8)) -> u8 {
         let original_pos = self.get_cursor_pos();
         self.set_cursor_pos(pos);
         let data = self.read_u8_from_cur();

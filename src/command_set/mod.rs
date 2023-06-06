@@ -1,3 +1,7 @@
+#![doc(hidden)]
+
+use crate::enums::basic_command::{DataWidth, Font, LineMode, MoveDirection, ShiftType, State};
+
 #[derive(Clone, Copy)]
 pub(super) enum CommandSet {
     ClearDisplay,
@@ -19,47 +23,4 @@ pub(super) enum CommandSet {
     // 这条指令没有唯一对应的函数，它分布在对 DDRAM 和 CGRAM 写入数据的函数中
     WriteDataToRAM(u8),
     ReadDataFromRAM,
-}
-
-#[derive(Clone, Copy, PartialEq, Default)]
-pub enum MoveDirection {
-    RightToLeft,
-    #[default]
-    LeftToRight,
-}
-
-#[derive(Clone, Copy, Default)]
-pub enum ShiftType {
-    #[default]
-    CursorOnly,
-    CursorAndDisplay,
-}
-
-#[derive(Clone, Copy, PartialEq, Default)]
-pub enum State {
-    Off,
-    #[default]
-    On,
-}
-
-#[derive(Clone, Copy, Default)]
-pub enum DataWidth {
-    #[default]
-    Bit4,
-    #[allow(dead_code)]
-    Bit8,
-}
-
-#[derive(Clone, Copy, Default, PartialEq)]
-pub enum LineMode {
-    OneLine,
-    #[default]
-    TwoLine,
-}
-
-#[derive(Clone, Copy, Default, PartialEq)]
-pub enum Font {
-    #[default]
-    Font5x8,
-    Font5x11,
 }

@@ -28,10 +28,13 @@ use stm32f4xx_hal::{pac, prelude::*};
 
 use lcd1602_driver::{
     builder::{Builder, BuilderAPI},
-    command_set::{Font, LineMode, MoveDirection, ShiftType, State},
+    enums::{
+        animation::{FlipStyle, MoveStyle},
+        basic_command::{Font, LineMode, MoveDirection, ShiftType, State},
+    },
     pins::{FourPinsAPI, Pins},
     utils::BitOps,
-    FlipType, LCDAnimation, LCDBasic, LCDExt, MoveType,
+    LCDAnimation, LCDBasic, LCDExt,
 };
 
 #[cortex_m_rt::entry]
@@ -122,8 +125,8 @@ fn main() -> ! {
     lcd.set_cursor_pos((15, 1));
     lcd.typewriter_write("~!", 250_000);
     // 测试两种滚动写入
-    lcd.split_flap_write("2061", FlipType::Simultaneous, 0, 150_000, None);
-    lcd.split_flap_write("DCL", FlipType::Sequential, 10, 150_000, Some(250_000));
+    lcd.split_flap_write("2061", FlipStyle::Simultaneous, 0, 150_000, None);
+    lcd.split_flap_write("DCL", FlipStyle::Sequential, 10, 150_000, Some(250_000));
 
     lcd.set_cursor_state(State::Off);
 
@@ -135,16 +138,16 @@ fn main() -> ! {
 
     // 测试读取 DDRAM 的功能
     // 偷偷在 DDRAM 的末尾写上一个竖线
-    let char_at_end = lcd.read_u8_from_pos((39, 0));
-    lcd.write_u8_to_pos(char_at_end, (39, 1));
+    let char_at_end = lcd.read_byte_from_pos((39, 0));
+    lcd.write_byte_to_pos(char_at_end, (39, 1));
 
     // 挪动一下屏幕
     lcd.delay_ms(1_000);
-    lcd.shift_display_to_pos(2, MoveType::Shortest, State::On, 250_000);
+    lcd.shift_display_to_pos(2, MoveStyle::Shortest, State::On, 250_000);
     lcd.delay_ms(1_000);
-    lcd.shift_display_to_pos(40 - 2, MoveType::Shortest, State::On, 250_000);
+    lcd.shift_display_to_pos(40 - 2, MoveStyle::Shortest, State::On, 250_000);
     lcd.delay_ms(1_000);
-    lcd.shift_display_to_pos(0, MoveType::Shortest, State::On, 250_000);
+    lcd.shift_display_to_pos(0, MoveStyle::Shortest, State::On, 250_000);
 
     // 让后让整个屏幕闪烁三次
     lcd.delay_ms(1_000);

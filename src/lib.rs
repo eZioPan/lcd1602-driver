@@ -5,7 +5,7 @@ Basic Usage:
 
 1. Initialize pins:
    * Initialize three push-pull pins for **RS** / **RW** / **E** of LCD1602
-   * Initialize 8 or 4 open-drain pins for DB0~DB7 or DB4~DB7 of LCD1602
+   * Initialize 8 or 4 **open-drain** pins for DB0~DB7 or DB4~DB7 of LCD1602
    * Initialize a delay timer(which implement [embedded_hal::blocking::delay])
 2. Use [8 pin Pins::new()] or [4 pin Pins::new()] to create a [Pins] struct containing all initialized pins
 3. Use the [Builder::new()] to create a [Builder] struct with [Pins] and the delay timer
@@ -30,15 +30,20 @@ use embedded_hal::{
     blocking::delay::{DelayMs, DelayUs},
     digital::v2::{InputPin, OutputPin},
 };
+use enums::{
+    animation::{FlipStyle, MoveStyle},
+    basic_command::RAMType,
+};
 
 use self::{
-    command_set::{Font, LineMode, MoveDirection, ShiftType, State},
+    enums::basic_command::{Font, LineMode, MoveDirection, ShiftType, State},
     full_command::FullCommand,
     pins::Pins,
 };
 
 pub mod builder;
 pub mod command_set;
+pub mod enums;
 mod full_command;
 mod impl_animation;
 mod impl_ext;
@@ -70,24 +75,6 @@ where
     ram_type: RAMType,
 }
 
-#[derive(Clone, Copy, PartialEq)]
-pub enum RAMType {
-    DDRAM,
-    CGRAM,
-}
-
-pub enum MoveType {
-    ForceMoveLeft,
-    ForceMoveRight,
-    NoCrossBoundary,
-    Shortest,
-}
-
-pub enum FlipType {
-    Sequential,
-    Simultaneous,
-}
-
 /// The [LCDAnimation] trait provides methods for animating the display
 pub trait LCDAnimation {
     /// Make the entire screen blink
@@ -111,17 +98,17 @@ pub trait LCDAnimation {
     /// # Arguments
     ///
     /// * `str` - string to display
-    /// * `ft` - flip type, see [FlipType]
-    /// * `max_flap_cnt` - The maximum number of times to flip the display before reaching the target character
-    /// * `per_flap_delay_us` - The delay (in microseconds) between each flip. It is recommended to set this value to at least `100_000`.
-    /// * `per_char_flap_delay_us` - Used in [FlipType::Sequential] mode, this is the time (in microseconds) to wait between flipping each character
+    /// * `fs` - flip style, see [FlipStyle]
+    /// * `max_flip_cnt` - The maximum number of times to flip the display before reaching the target character
+    /// * `per_flip_delay_us` - The delay (in microseconds) between each flip. It is recommended to set this value to at least `100_000`.
+    /// * `per_char_flip_delay_us` - Used in [FlipStyle::Sequential] mode, this is the time (in microseconds) to wait between flipping each character
     fn split_flap_write(
         &mut self,
         str: &str,
-        ft: FlipType,
-        max_flap_cnt: u8,
-        per_flap_delay_us: u32,
-        per_char_flap_delay_us: Option<u32>,
+        fs: FlipStyle,
+        max_flip_cnt: u8,
+        per_flip_delay_us: u32,
+        per_char_flip_delay_us: Option<u32>,
     );
 
     /// Move the display window to the specified position (measured from the upper-left corner of the display)
@@ -129,13 +116,13 @@ pub trait LCDAnimation {
     /// # Arguments
     ///
     /// * `target_pos` - The target position of the display window
-    /// * `mt` - The type of movement, see [MoveType]
+    /// * `ms` - The style of movement, see [MoveStyle]
     /// * `display_state_when_shift` - Whether to turn off the screen during the move
     /// * `delay_us_per_step` - The delay (in microseconds) between each step of the move
     fn shift_display_to_pos(
         &mut self,
         target_pos: u8,
-        mt: MoveType,
+        ms: MoveStyle,
         display_state_when_shift: State,
         delay_us_per_step: u32,
     );
@@ -147,20 +134,32 @@ pub trait LCDAnimation {
     fn delay_us(&mut self, us: u32);
 }
 
+/// [LCDExt] traits provide common non-animation display methods
 pub trait LCDExt {
+    /// toggle entire display on and off (it doesn't toggle backlight)
     fn toggle_display(&mut self);
+    /// write [char] to current position
     fn write_char_to_cur(&mut self, char: char);
-    fn write_str(&mut self, str: &str);
-    fn write_u8_to_pos(&mut self, byte: impl Into<u8>, pos: (u8, u8));
-    fn read_u8_from_pos(&mut self, pos: (u8, u8)) -> u8;
+    /// write string to current position
+    fn write_str_to_cur(&mut self, str: &str);
+    /// write a byte to specific position
+    fn write_byte_to_pos(&mut self, byte: impl Into<u8>, pos: (u8, u8));
+    /// read a byte from specific position
+    fn read_byte_from_pos(&mut self, pos: (u8, u8)) -> u8;
+    /// write a char to specific position
     fn write_char_to_pos(&mut self, char: char, pos: (u8, u8));
+    /// write string to specific position
+    fn write_str_to_pos(&mut self, str: &str, pos: (u8, u8));
+    /// write custom graph to specific position
     fn write_graph_to_pos(&mut self, index: u8, pos: (u8, u8));
+    // read custom graph data from CGRAM
     fn read_graph_from_cgram(&mut self, index: u8) -> [u8; 8];
+    // change cursor position with relative offset
     fn offset_cursor_pos(&mut self, offset: (i8, i8));
 }
 
+/// [LCDExt] traits provide methods that close to LCD1602 instructions
 pub trait LCDBasic {
-    fn init_lcd(&mut self);
     fn write_u8_to_cur(&mut self, byte: impl Into<u8>);
     fn read_u8_from_cur(&mut self) -> u8;
     fn write_graph_to_cgram(&mut self, index: u8, graph: &[u8; 8]);
@@ -192,6 +191,7 @@ pub trait LCDBasic {
 }
 
 trait StructAPI {
+    fn internal_init_lcd(&mut self);
     fn internal_set_line_mode(&mut self, line: LineMode);
     fn internal_set_font(&mut self, font: Font);
     fn internal_set_display_state(&mut self, display: State);

@@ -4,8 +4,8 @@ use embedded_hal::{
 };
 
 use super::{
-    command_set::{LineMode, MoveDirection, ShiftType, State},
-    FlipType, LCDAnimation, LCDBasic, LCDExt, MoveType, StructUtils, LCD,
+    enums::basic_command::{LineMode, MoveDirection, ShiftType, State},
+    FlipStyle, LCDAnimation, LCDBasic, LCDExt, MoveStyle, StructUtils, LCD,
 };
 
 impl<ControlPin, DBPin, const PIN_CNT: usize, Delayer> LCDAnimation
@@ -40,9 +40,9 @@ where
     fn split_flap_write(
         &mut self,
         str: &str,
-        ft: FlipType,
-        max_flap_count: u8,
-        per_flap_delay_us: u32,
+        fs: FlipStyle,
+        max_flip_count: u8,
+        per_flip_delay_us: u32,
         per_char_delay_us: Option<u32>,
     ) {
         // 首先要检查的是，输入的字符串中的每个字符，是否能适合产生翻页效果（应该在 ASCII 0x20 到 0x7D 的区间）
@@ -60,8 +60,8 @@ where
             cursor_state_changed = true;
         }
 
-        match ft {
-            FlipType::Sequential => {
+        match fs {
+            FlipStyle::Sequential => {
                 assert!(
                     per_char_delay_us.is_some(),
                     "Should set some per char delay in Sequential Mode"
@@ -69,19 +69,19 @@ where
                 str.chars().for_each(|char| {
                     let cur_byte = char as u8;
 
-                    let flap_start_byte = if max_flap_count == 0 || cur_byte - max_flap_count < 0x20
+                    let flap_start_byte = if max_flip_count == 0 || cur_byte - max_flip_count < 0x20
                     {
                         0x20
                     } else {
-                        cur_byte - max_flap_count
+                        cur_byte - max_flip_count
                     };
 
                     let cur_pos = self.get_cursor_pos();
 
                     self.delay_us(per_char_delay_us.unwrap());
                     (flap_start_byte..=cur_byte).for_each(|byte| {
-                        self.delay_us(per_flap_delay_us);
-                        self.write_u8_to_pos(byte, cur_pos);
+                        self.delay_us(per_flip_delay_us);
+                        self.write_byte_to_pos(byte, cur_pos);
                     });
 
                     self.shift_cursor_or_display(
@@ -90,25 +90,25 @@ where
                     );
                 })
             }
-            FlipType::Simultaneous => {
+            FlipStyle::Simultaneous => {
                 let min_char_byte = str.chars().min().unwrap() as u8;
                 let max_char_byte = str.chars().max().unwrap() as u8;
                 let str_len = str.chars().count();
 
-                let flap_start_byte = if max_flap_count == 0 {
+                let flap_start_byte = if max_flip_count == 0 {
                     0x20
-                } else if max_char_byte - min_char_byte > max_flap_count {
+                } else if max_char_byte - min_char_byte > max_flip_count {
                     min_char_byte
-                } else if max_char_byte - max_flap_count < 0x20 {
+                } else if max_char_byte - max_flip_count < 0x20 {
                     0x20
                 } else {
-                    max_char_byte - max_flap_count
+                    max_char_byte - max_flip_count
                 };
 
                 let start_pos = self.get_cursor_pos();
 
                 (flap_start_byte..=max_char_byte).for_each(|cur_byte| {
-                    self.delay_us(per_flap_delay_us);
+                    self.delay_us(per_flip_delay_us);
                     str.char_indices()
                         .filter(|&(_, target_char)| cur_byte <= target_char as u8) // 仅修改需要变动的地址
                         .for_each(|(index, _)| {
@@ -120,7 +120,7 @@ where
                                     self.calculate_pos_by_offset(start_pos, (index as i8, 0))
                                 }
                             };
-                            self.write_u8_to_pos(cur_byte, cur_pos);
+                            self.write_byte_to_pos(cur_byte, cur_pos);
                         });
 
                     // 在完成同步翻转后，我们并不能确定光标所在的位置（上面使用的是 .filter() 执行的修改）
@@ -148,7 +148,7 @@ where
     fn shift_display_to_pos(
         &mut self,
         target_pos: u8,
-        mt: MoveType,
+        ms: MoveStyle,
         display_state_when_shift: State,
         delay_us_per_step: u32,
     ) {
@@ -182,8 +182,8 @@ where
         self.set_display_state(display_state_when_shift);
 
         // 没有必要在这里反复操作设备，这里只需要计算移动的距离和方向即可
-        let (distance, direction) = match mt {
-            MoveType::ForceMoveLeft => {
+        let (distance, direction) = match ms {
+            MoveStyle::ForceMoveLeft => {
                 if target_pos < before_pos {
                     (before_pos - target_pos, MoveDirection::RightToLeft)
                 } else {
@@ -194,7 +194,7 @@ where
                 }
             }
 
-            MoveType::ForceMoveRight => {
+            MoveStyle::ForceMoveRight => {
                 if target_pos > before_pos {
                     (target_pos - before_pos, MoveDirection::LeftToRight)
                 } else {
@@ -205,7 +205,7 @@ where
                 }
             }
 
-            MoveType::NoCrossBoundary => {
+            MoveStyle::NoCrossBoundary => {
                 if target_pos > before_pos {
                     (target_pos - before_pos, MoveDirection::LeftToRight)
                 } else {
@@ -213,7 +213,7 @@ where
                 }
             }
 
-            MoveType::Shortest => {
+            MoveStyle::Shortest => {
                 if target_pos > before_pos {
                     if target_pos - before_pos <= line_capacity / 2 {
                         (target_pos - before_pos, MoveDirection::LeftToRight)

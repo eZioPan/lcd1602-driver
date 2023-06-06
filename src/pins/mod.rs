@@ -1,3 +1,5 @@
+//! Pin related functions
+
 use embedded_hal::digital::v2::{InputPin, OutputPin};
 
 use crate::full_command::FullCommand;
@@ -6,6 +8,7 @@ mod impl_crate_level_api;
 mod impl_internal_api;
 mod impl_pins_api;
 
+/// [Pins] record [LCD][crate::LCD] related pins data
 pub struct Pins<ControlPin, DBPin, const PIN_CNT: usize>
 where
     ControlPin: OutputPin,
@@ -17,6 +20,7 @@ where
     db_pins: [DBPin; PIN_CNT],
 }
 
+/// for 8 pin mode
 pub trait FourPinsAPI<ControlPin, DBPin>
 where
     ControlPin: OutputPin,
@@ -36,6 +40,7 @@ where
         DBPin: OutputPin + InputPin;
 }
 
+/// for 4 pin mode
 pub trait EightPinsAPI<ControlPin, DBPin>
 where
     ControlPin: OutputPin,

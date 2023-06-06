@@ -1,5 +1,6 @@
 use crate::{
-    command_set::{CommandSet, DataWidth, Font, LineMode, MoveDirection, ShiftType, State},
+    command_set::CommandSet,
+    enums::basic_command::{DataWidth, Font, LineMode, MoveDirection, ShiftType, State},
     utils::BitOps,
 };
 

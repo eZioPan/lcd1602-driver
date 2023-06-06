@@ -3,11 +3,10 @@ use embedded_hal::{
     digital::v2::{InputPin, OutputPin},
 };
 
-use crate::StructUtils;
-
 use super::{
-    command_set::{Font, LineMode, MoveDirection, ShiftType, State},
-    LCDBasic, RAMType, StructAPI, LCD,
+    command_set::CommandSet,
+    enums::basic_command::{DataWidth, Font, LineMode, MoveDirection, ShiftType, State},
+    LCDBasic, PinsInteraction, RAMType, StructAPI, StructUtils, LCD,
 };
 
 impl<ControlPin, DBPin, const PIN_CNT: usize, Delayer> StructAPI
@@ -17,6 +16,55 @@ where
     DBPin: OutputPin + InputPin,
     Delayer: DelayMs<u32> + DelayUs<u32>,
 {
+    fn internal_init_lcd(&mut self) {
+        // 在初始化流程中，我们最好每次都发送“裸指令”
+        // 不要使用 LCD 结构体提供的其它方法
+
+        // 4 pin 和 8 pin 在初始化的时候，仅有前 3 个 / 2 个 指令不同，其它均一样
+        match PIN_CNT {
+            4 => {
+                self.delay_and_send(CommandSet::HalfFunctionSet, 40_000);
+
+                self.delay_and_send(
+                    CommandSet::FunctionSet(DataWidth::Bit4, self.get_line_mode(), self.get_font()),
+                    40,
+                );
+
+                self.delay_and_send(
+                    CommandSet::FunctionSet(DataWidth::Bit4, self.get_line_mode(), self.get_font()),
+                    40,
+                );
+            }
+
+            8 => {
+                self.delay_and_send(
+                    CommandSet::FunctionSet(DataWidth::Bit8, self.get_line_mode(), self.get_font()),
+                    40_000,
+                );
+
+                self.delay_and_send(
+                    CommandSet::FunctionSet(DataWidth::Bit8, self.get_line_mode(), self.get_font()),
+                    40,
+                );
+            }
+
+            _ => panic!("Pins other than 4 and 8 are not supported"),
+        }
+
+        self.wait_and_send(CommandSet::DisplayOnOff {
+            display: self.get_display_state(),
+            cursor: self.get_cursor_state(),
+            cursor_blink: self.get_cursor_blink_state(),
+        });
+
+        self.wait_and_send(CommandSet::ClearDisplay);
+
+        self.wait_and_send(CommandSet::EntryModeSet(
+            self.get_default_direction(),
+            self.get_default_shift_type(),
+        ));
+    }
+
     fn internal_set_line_mode(&mut self, line: LineMode) {
         assert!(
             (self.get_font() == Font::Font5x11) && (line == LineMode::OneLine),
@@ -56,8 +104,6 @@ where
     }
 
     fn internal_set_cursor_pos(&mut self, pos: (u8, u8)) {
-        // TODO: ST7066U 的 DDRAM 地址是循环的，我们应该在内存中实现这个效果么？
-
         match self.line {
             LineMode::OneLine => {
                 assert!(pos.0 < 80, "x offset too big");

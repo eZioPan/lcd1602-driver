@@ -4,9 +4,9 @@ use embedded_hal::{
 };
 
 use crate::{
-    command_set::{Font, LineMode, MoveDirection, ShiftType, State},
+    enums::basic_command::{Font, LineMode, MoveDirection, ShiftType, State},
     pins::Pins,
-    LCDBasic, RAMType, LCD,
+    RAMType, StructAPI, LCD,
 };
 
 use super::{Builder, BuilderAPI};
@@ -18,6 +18,21 @@ where
     DBPin: OutputPin + InputPin,
     Delayer: DelayMs<u32> + DelayUs<u32>,
 {
+    fn new(pins: Pins<ControlPin, DBPin, PIN_CNT>, delayer: Delayer) -> Self {
+        Self {
+            pins: Some(pins),
+            delayer: Some(delayer),
+            line: Default::default(),
+            font: Default::default(),
+            display_on: Default::default(),
+            cursor_on: Default::default(),
+            cursor_blink: Default::default(),
+            dir: Default::default(),
+            shift_type: Default::default(),
+            wait_interval_us: 10,
+        }
+    }
+
     fn build_and_init(mut self) -> LCD<ControlPin, DBPin, PIN_CNT, Delayer> {
         let mut lcd = LCD {
             pins: self.pop_pins(),
@@ -34,23 +49,8 @@ where
             wait_interval_us: self.get_wait_interval_us(),
             ram_type: RAMType::DDRAM, // 锁定为进入 DDRAM
         };
-        lcd.init_lcd();
+        lcd.internal_init_lcd();
         lcd
-    }
-
-    fn new(pins: Pins<ControlPin, DBPin, PIN_CNT>, delayer: Delayer) -> Self {
-        Self {
-            pins: Some(pins),
-            delayer: Some(delayer),
-            line: Default::default(),
-            font: Default::default(),
-            display_on: Default::default(),
-            cursor_on: Default::default(),
-            cursor_blink: Default::default(),
-            dir: Default::default(),
-            shift_type: Default::default(),
-            wait_interval_us: 10,
-        }
     }
 
     fn pop_pins(&mut self) -> Pins<ControlPin, DBPin, PIN_CNT> {

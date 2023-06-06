@@ -4,7 +4,7 @@ An embedded-hal based driver for the LCD1602 display
 
 ### NOTE
 
-The most common functions have been implemented, but this crate is still in a very early stage of development, so the API and functionality may change.
+The most common functions have been implemented, but this crate is still in a **very early stage** of development, so the API and functionality may change.
 
 ## Features
 
