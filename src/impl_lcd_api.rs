@@ -45,13 +45,10 @@ where
 
         self.wait_and_send(CommandSet::WriteDataToRAM(byte.into()));
 
-        // 由于 LCD1602 的计数器会自动自增，因此这里只需要更新结构体的计数即可
-        // 由于 UT7066U 的内存是循环的，因此到最后一个位置之后，内存的地址是回到原点的
+        // since AC of UT7066U will automaticlly increase, we only need to update LCD struct
+        // since RAM of UT7066U is looped, we need to mimic it
         let last_pos = self.get_cursor_pos();
-        let line_capacity: u8 = match self.get_line_mode() {
-            LineMode::OneLine => 40,
-            LineMode::TwoLine => 80,
-        };
+        let line_capacity = self.get_line_capacity();
 
         match self.get_default_direction() {
             MoveDirection::RightToLeft => match self.line {
@@ -104,14 +101,13 @@ where
     fn write_graph_to_cgram(&mut self, index: u8, graph_data: &[u8; 8]) {
         assert!(index < 8, "Only 8 graphs allowed in CGRAM");
 
-        // 所有的行，设置为 1 的位，都应仅限于低 4 位
         assert!(
             graph_data.iter().all(|&line| line < 2u8.pow(5)),
             "Only lower 5 bits use to construct display"
         );
 
-        // 有一个问题是，如果写入方向是从右到左，那么这里需要临时调整一下方向
-        // 调整为从左到右，这样我们绘制字符的时候，就是从上到下绘制
+        // if DDRAM is write from right to left, then when we change to CGRAM, graph will write from lower to upper
+        // we will change it to left to right, to make writing correct
         let mut direction_fliped = false;
         if self.get_default_direction() == MoveDirection::RightToLeft {
             self.set_default_direction(MoveDirection::LeftToRight);
@@ -120,14 +116,12 @@ where
 
         let cgram_data_addr_start = index.checked_shl(3).unwrap();
 
-        // 注意 AC 在 CGRAM 里也是会自增的，因此不需要每一步都设置位置
         self.set_cgram_addr(cgram_data_addr_start as u8);
         graph_data.iter().for_each(|&line_data| {
             self.wait_and_send(CommandSet::WriteDataToRAM(line_data));
         });
 
-        // 最后我们检查一下书写方向是否被翻转，
-        // 如果被翻转表示原始书写的方向为从右向左，记得需要翻转回去
+        // if writing direction is changed, then change it back
         if direction_fliped {
             self.set_default_direction(MoveDirection::RightToLeft)
         }
@@ -235,10 +229,8 @@ where
         self.internal_set_ram_type(RAMType::DDRAM);
         self.internal_set_cursor_pos(pos);
 
-        // 这里比较特殊，
-        // 如果处于单行模式，没有啥好说的，y 永远是 0，x 是几，实际的地址就是几
-        // 如果处于双行模式，y 对于实际地址的偏移量为第二行开头的地址 0x40，x 的偏移量为该行中的偏移量
-        // 虽然 LCD1602 说明书中，每一行都没有取到 x 的最大范围，但是我们这里并不怕这个问题，因为我们已经在 internal_set_cursor_pos 方法中检查过这个问题了
+        // in one line mode, pos.1 will always keep at 0
+        // in two line mode, the second line start at 0x40
         let raw_pos: u8 = pos.1 * 0x40 + pos.0;
 
         self.wait_and_send(CommandSet::SetDDRAM(raw_pos));
@@ -263,5 +255,12 @@ where
 
     fn get_ram_type(&self) -> RAMType {
         self.ram_type
+    }
+
+    fn get_line_capacity(&self) -> u8 {
+        match self.get_line_mode() {
+            LineMode::OneLine => 80,
+            LineMode::TwoLine => 40,
+        }
     }
 }

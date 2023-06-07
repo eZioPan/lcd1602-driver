@@ -44,10 +44,10 @@ where
             cursor_blink: self.get_blink(),
             direction: self.get_direction(),
             shift_type: self.get_shift(),
-            cursor_pos: (0, 0), // 锁定为初始位置
-            display_offset: 0,  // 锁定为初始位置
+            cursor_pos: (0, 0),
+            display_offset: 0,
             wait_interval_us: self.get_wait_interval_us(),
-            ram_type: RAMType::DDRAM, // 锁定为进入 DDRAM
+            ram_type: RAMType::DDRAM,
         };
         lcd.internal_init_lcd();
         lcd

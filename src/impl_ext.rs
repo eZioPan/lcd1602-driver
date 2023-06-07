@@ -39,8 +39,8 @@ where
             "Current in CGRAM, use .set_cursor_pos() to change to DDRAM"
         );
 
+        // map char out side of ASCII 0x20 and 0x7D to full rectangle
         let out_byte = match char.is_ascii() {
-            // 在 Rust 判定该字节为 ASCII 的同时，我们还得判定这个字符落 LCD1602 CGRAM 与 ASCII 重叠的位置
             true if (0x20 <= char as u8) && (char as u8 <= 0x7D) => char as u8,
             _ => 0xFF,
         };
@@ -74,7 +74,7 @@ where
     fn read_graph_from_cgram(&mut self, index: u8) -> [u8; 8] {
         assert!(index < 8, "index too big, should less than 8");
 
-        // 将 index 偏移为 CGRAM 中的地址
+        // convert index to cgram address
         self.set_cgram_addr(index.checked_shl(3).unwrap());
 
         let mut graph: [u8; 8] = [0u8; 8];

@@ -27,13 +27,11 @@ where
         self.db_pins
             .iter_mut()
             .enumerate()
-            // .fold() 在这里用于在每次迭代中，不断修改同一个值
+            // use .fold() to change same value in different iteration
             .fold(0u8, |mut acc, (index, pin)| {
-                // 在使用开漏脚的读取形式时，记得将引脚“置高”，以“释放”对引脚的拉低
+                // in open drain mode, set pin high to release control
                 pin.set_high().ok().unwrap();
-                // 这里不可以 pin.get_state() 函数，
-                // .get_state() 返回的是该引脚被软件设置的状态，对应的是 .is_set_high() 和 .is_set_low() 函数
-                // 这里只能用 .is_high() 或 .is_low() 来读取开漏脚监测到的外部电平
+                // it's incorrect to use .get_state() here, which return what we want to put pin in, rather what pin real state
                 match pin.is_low() {
                     Ok(val) => match val {
                         false => acc.set_bit(index as u8),

@@ -1,4 +1,6 @@
 //! Drive LCD1602 with a STM32F411RET6 in 4 Pin Mode
+//!
+//! this demo use many different read/write functions intentionally, to test functions works just fine.
 
 //! Wiring diagram
 //!
@@ -112,16 +114,31 @@ fn main() -> ! {
     // we set cursor 1 step right
     lcd.set_cursor_pos((1, 0));
 
+    // type writer effect
+    lcd.typewriter_write("hello,", 250_000);
+
+    // relative cursor move
+    lcd.offset_cursor_pos((1, 0));
+
+    // to test write string to cur pos
+    lcd.write_str_to_cur("world!");
+
+    // manually delay
+    lcd.delay_ms(250);
+
+    let line_capacity = lcd.get_line_capacity();
+
+    // to test write character to specified position
     // since tilde chracter (~) is not in CGROM of LCD1602A
     // it should be displayed as a full rectangle
-    lcd.typewriter_write("hello, world! ~", 250_000);
+    lcd.write_char_to_pos('~', (15, 0));
 
     // manually delay
     lcd.delay_ms(250);
 
     // to test whether line break works well
     // set cursor to the end of first line, and write a vertical line
-    lcd.set_cursor_pos((39, 0));
+    lcd.set_cursor_pos((line_capacity - 1, 0));
     lcd.write_char_to_cur('|');
 
     // turn off cursor blinking, so that cursor will only be a underline

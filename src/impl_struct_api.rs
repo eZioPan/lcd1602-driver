@@ -17,10 +17,9 @@ where
     Delayer: DelayMs<u32> + DelayUs<u32>,
 {
     fn internal_init_lcd(&mut self) {
-        // 在初始化流程中，我们最好每次都发送“裸指令”
-        // 不要使用 LCD 结构体提供的其它方法
+        // in initialization process, we'd better use "raw command", to strictly follow datasheet
 
-        // 4 pin 和 8 pin 在初始化的时候，仅有前 3 个 / 2 个 指令不同，其它均一样
+        // only first 2 or 3 commands are different between 4 pin and 8 pin mode
         match PIN_CNT {
             4 => {
                 self.delay_and_send(CommandSet::HalfFunctionSet, 40_000);
@@ -104,13 +103,14 @@ where
     }
 
     fn internal_set_cursor_pos(&mut self, pos: (u8, u8)) {
+        let line_capacity = self.get_line_capacity();
         match self.line {
             LineMode::OneLine => {
-                assert!(pos.0 < 80, "x offset too big");
+                assert!(pos.0 < line_capacity, "x offset too big");
                 assert!(pos.1 < 1, "always keep y as 0 on OneLine mode");
             }
             LineMode::TwoLine => {
-                assert!(pos.0 < 40, "x offset too big");
+                assert!(pos.0 < line_capacity, "x offset too big");
                 assert!(pos.1 < 2, "y offset too big");
             }
         }
@@ -119,37 +119,33 @@ where
     }
 
     fn internal_set_display_offset(&mut self, offset: u8) {
-        match self.get_line_mode() {
-            LineMode::OneLine => assert!(
-                offset < 80,
-                "Display Offset too big, should not bigger than 79"
-            ),
-            LineMode::TwoLine => assert!(
-                offset < 40,
-                "Display Offset too big, should not bigger than 39"
-            ),
+        if offset >= self.get_line_capacity() {
+            match self.get_line_mode() {
+                LineMode::OneLine => panic!("Display Offset too big, should not bigger than 79"),
+                LineMode::TwoLine => panic!("Display Offset too big, should not bigger than 39"),
+            }
         }
 
         self.display_offset = offset;
     }
 
     fn internal_shift_cursor_or_display(&mut self, st: ShiftType, dir: MoveDirection) {
-        // 在偏移显示窗口的时候，ST7066U 展示的内容为首尾相连的模式
         let cur_display_offset = self.get_display_offset();
         let cur_cursor_pos = self.get_cursor_pos();
+        let line_capacity = self.get_line_capacity();
 
         match st {
             ShiftType::CursorOnly => match dir {
                 MoveDirection::LeftToRight => match self.get_line_mode() {
                     LineMode::OneLine => {
-                        if cur_cursor_pos.0 == 79 {
+                        if cur_cursor_pos.0 == line_capacity - 1 {
                             self.internal_set_cursor_pos((0, 0));
                         } else {
                             self.internal_set_cursor_pos((cur_cursor_pos.0 + 1, 0));
                         }
                     }
                     LineMode::TwoLine => {
-                        if cur_cursor_pos.0 == 39 {
+                        if cur_cursor_pos.0 == line_capacity - 1 {
                             if cur_cursor_pos.1 == 0 {
                                 self.internal_set_cursor_pos((0, 1));
                             } else {
@@ -163,7 +159,7 @@ where
                 MoveDirection::RightToLeft => match self.get_line_mode() {
                     LineMode::OneLine => {
                         if cur_cursor_pos.0 == 0 {
-                            self.internal_set_cursor_pos((79, 0));
+                            self.internal_set_cursor_pos((line_capacity - 1, 0));
                         } else {
                             self.internal_set_cursor_pos((cur_cursor_pos.0 - 1, 0));
                         }
@@ -171,9 +167,9 @@ where
                     LineMode::TwoLine => {
                         if cur_cursor_pos.0 == 0 {
                             if cur_cursor_pos.1 == 0 {
-                                self.internal_set_cursor_pos((39, 1));
+                                self.internal_set_cursor_pos((line_capacity - 1, 1));
                             } else {
-                                self.internal_set_cursor_pos((39, 0));
+                                self.internal_set_cursor_pos((line_capacity - 1, 0));
                             }
                         } else {
                             self.internal_set_cursor_pos((cur_cursor_pos.0 - 1, cur_cursor_pos.1));
@@ -183,30 +179,18 @@ where
             },
             ShiftType::CursorAndDisplay => match dir {
                 MoveDirection::LeftToRight => {
-                    match self.get_line_mode() {
-                        LineMode::OneLine if cur_display_offset == 79 => {
-                            self.internal_set_display_offset(0)
-                        }
-
-                        LineMode::TwoLine if cur_display_offset == 39 => {
-                            self.internal_set_display_offset(0)
-                        }
-
-                        _ => self.internal_set_display_offset(cur_display_offset + 1),
+                    if cur_display_offset == line_capacity - 1 {
+                        self.internal_set_display_offset(0)
+                    } else {
+                        self.internal_set_display_offset(cur_display_offset + 1)
                     };
                 }
                 MoveDirection::RightToLeft => {
-                    match self.get_line_mode() {
-                        LineMode::OneLine if cur_display_offset == 0 => {
-                            self.internal_set_display_offset(79)
-                        }
-
-                        LineMode::TwoLine if cur_display_offset == 0 => {
-                            self.internal_set_display_offset(39)
-                        }
-
-                        _ => self.internal_set_display_offset(cur_display_offset - 1),
-                    };
+                    if cur_display_offset == 0 {
+                        self.internal_set_display_offset(line_capacity - 1)
+                    } else {
+                        self.internal_set_display_offset(cur_display_offset - 1)
+                    }
                 }
             },
         }
@@ -229,17 +213,18 @@ where
     Delayer: DelayMs<u32> + DelayUs<u32>,
 {
     fn calculate_pos_by_offset(&self, original_pos: (u8, u8), offset: (i8, i8)) -> (u8, u8) {
+        let line_capacity = self.get_line_capacity();
         match self.get_line_mode() {
             LineMode::OneLine => {
                 assert!(
-                    offset.0.abs() < 80,
+                    (offset.0.abs() as u8) < line_capacity,
                     "x offset too big, should greater than -80 and less than 80"
                 );
                 assert!(offset.1 == 0, "y offset should always be 0 on OneLine Mode")
             }
             LineMode::TwoLine => {
                 assert!(
-                    offset.0.abs() < 40,
+                    (offset.0.abs() as u8) < line_capacity,
                     "x offset too big, should greater than -40 and less than 40"
                 );
                 assert!(
@@ -253,9 +238,9 @@ where
             LineMode::OneLine => {
                 let raw_x_pos = (original_pos.0 as i8) + offset.0;
                 if raw_x_pos < 0 {
-                    ((raw_x_pos + 80) as u8, 0)
-                } else if raw_x_pos > 79 {
-                    ((raw_x_pos - 80) as u8, 0)
+                    ((raw_x_pos + line_capacity as i8) as u8, 0)
+                } else if raw_x_pos > line_capacity as i8 {
+                    ((raw_x_pos - line_capacity as i8) as u8, 0)
                 } else {
                     (raw_x_pos as u8, 0)
                 }
@@ -263,15 +248,14 @@ where
             LineMode::TwoLine => {
                 let mut x_overflow: i8 = 0;
 
-                // 这里不需要考虑两行地址不连续的问题
-                // 因为我们在这里处理的是我们设计的坐标系，而非实际的内存地址
-                // 这里的设计有点像全加器的设计，具有一个溢出标识符
+                // this likes a "adder" in logic circuit design
+
                 let mut raw_x_pos = (original_pos.0 as i8) + offset.0;
 
                 if raw_x_pos < 0 {
                     raw_x_pos += 2;
                     x_overflow = -1;
-                } else if raw_x_pos > 39 {
+                } else if raw_x_pos > line_capacity as i8 {
                     raw_x_pos -= 2;
                     x_overflow = 1;
                 }

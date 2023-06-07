@@ -27,7 +27,6 @@ pub mod basic_command {
     pub enum DataWidth {
         #[default]
         Bit4,
-        #[allow(dead_code)]
         Bit8,
     }
 

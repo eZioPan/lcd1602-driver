@@ -158,7 +158,7 @@ pub trait LCDExt {
     fn offset_cursor_pos(&mut self, offset: (i8, i8));
 }
 
-/// [LCDExt] traits provide methods that close to LCD1602 instructions
+/// [LCDBasic] traits provide methods that close to LCD1602 instructions
 pub trait LCDBasic {
     fn write_u8_to_cur(&mut self, byte: impl Into<u8>);
     fn read_u8_from_cur(&mut self) -> u8;
@@ -188,6 +188,7 @@ pub trait LCDBasic {
     fn get_display_offset(&self) -> u8;
     fn set_wait_interval_us(&mut self, interval: u32);
     fn get_wait_interval_us(&self) -> u32;
+    fn get_line_capacity(&self) -> u8;
 }
 
 trait StructAPI {
