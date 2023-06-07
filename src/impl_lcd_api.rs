@@ -48,12 +48,16 @@ where
         // 由于 LCD1602 的计数器会自动自增，因此这里只需要更新结构体的计数即可
         // 由于 UT7066U 的内存是循环的，因此到最后一个位置之后，内存的地址是回到原点的
         let last_pos = self.get_cursor_pos();
+        let line_capacity: u8 = match self.get_line_mode() {
+            LineMode::OneLine => 40,
+            LineMode::TwoLine => 80,
+        };
 
         match self.get_default_direction() {
             MoveDirection::RightToLeft => match self.line {
                 LineMode::OneLine => {
                     if last_pos.0 == 0 {
-                        self.internal_set_cursor_pos((79, 0));
+                        self.internal_set_cursor_pos((line_capacity - 1, 0));
                     } else {
                         self.internal_set_cursor_pos((last_pos.0 - 1, 0));
                     }
@@ -61,9 +65,9 @@ where
                 LineMode::TwoLine => {
                     if last_pos.0 == 0 {
                         if last_pos.1 == 1 {
-                            self.internal_set_cursor_pos((39, 0));
+                            self.internal_set_cursor_pos((line_capacity - 1, 0));
                         } else {
-                            self.internal_set_cursor_pos((39, 1));
+                            self.internal_set_cursor_pos((line_capacity - 1, 1));
                         }
                     } else {
                         self.internal_set_cursor_pos((last_pos.0 - 1, last_pos.1));
@@ -72,14 +76,14 @@ where
             },
             MoveDirection::LeftToRight => match self.line {
                 LineMode::OneLine => {
-                    if last_pos.0 == 79 {
+                    if last_pos.0 == line_capacity - 1 {
                         self.internal_set_cursor_pos((0, 0));
                     } else {
                         self.internal_set_cursor_pos((last_pos.0 + 1, 0));
                     }
                 }
                 LineMode::TwoLine => {
-                    if last_pos.0 == 39 {
+                    if last_pos.0 == line_capacity - 1 {
                         if last_pos.1 == 0 {
                             self.internal_set_cursor_pos((1, 0));
                         } else {

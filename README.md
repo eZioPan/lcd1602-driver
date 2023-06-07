@@ -2,7 +2,7 @@
 
 An embedded-hal based driver for the LCD1602 display
 
-### NOTE
+### INFO
 
 The most common functions have been implemented, but this crate is still in a **very early stage** of development, so the API and functionality may change.
 
@@ -25,13 +25,13 @@ The most common functions have been implemented, but this crate is still in a **
   - Write strings at the current position
   - Write strings at a specific position represented by (x,y) coordinates
   - Offset cursor position relatively (represented by (x,y) coordinates)
-  - Offset display window to a specific position represented by (x,y) coordinates
-  - Write custom characters represented by an array to a specific position in CGRAM
+  - Offset display window to a specific position
+  - Write custom character graph represented by an array to a specific position in CGRAM
   - Read custom characters at a specific position in CGRAM
   - Toggle the display of the entire display on/off
 - Some simple animation effects
   - Delay execution (microseconds/milliseconds)
-  - Full-screen flashing (endless/specific number of times)
+  - Full-screen blinking (endless/specific number of times)
   - Typewriter-style string display
   - Split-flap-style string display (one by one/simultaneously)
 - And more...
