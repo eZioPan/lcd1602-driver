@@ -26,18 +26,9 @@ Basic Usage:
 
 #![no_std]
 
-use embedded_hal::{
-    blocking::delay::{DelayMs, DelayUs},
-    digital::v2::{InputPin, OutputPin},
-};
 use enums::{
     animation::{FlipStyle, MoveStyle},
     basic_command::RAMType,
-};
-
-use self::{
-    enums::basic_command::{Font, LineMode, MoveDirection, ShiftType, State},
-    pins::Pins,
 };
 
 mod animation;
@@ -53,25 +44,3 @@ pub mod pins;
 mod struct_api;
 mod struct_utils;
 pub mod utils;
-
-/// The main struct for operating the LCD1602
-pub struct LCD<ControlPin, DBPin, const PIN_CNT: usize, Delayer>
-where
-    ControlPin: OutputPin,
-    DBPin: OutputPin + InputPin,
-    Delayer: DelayMs<u32> + DelayUs<u32>,
-{
-    pins: Pins<ControlPin, DBPin, PIN_CNT>,
-    delayer: Delayer,
-    line: LineMode,
-    font: Font,
-    display_on: State,
-    cursor_on: State,
-    cursor_blink: State,
-    direction: MoveDirection,
-    shift_type: ShiftType,
-    cursor_pos: (u8, u8),
-    display_offset: u8,
-    wait_interval_us: u32,
-    ram_type: RAMType,
-}

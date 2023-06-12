@@ -6,12 +6,38 @@ use embedded_hal::{
 use crate::{
     animation::LCDAnimation,
     basic::LCDBasic,
+    command_set::CommandSet,
     enums::basic_command::{Font, LineMode, MoveDirection, RAMType, ShiftType, State},
     ext::LCDExt,
+    full_command::FullCommand,
+    pin_interaction::PinsInteraction,
+    pins::{Pins, PinsCrateLevelAPI},
     struct_api::StructAPI,
     struct_utils::StructUtils,
-    LCD,
+    utils::{BitOps, BitState},
 };
+
+/// The main struct for operating the LCD1602
+pub struct LCD<ControlPin, DBPin, const PIN_CNT: usize, Delayer>
+where
+    ControlPin: OutputPin,
+    DBPin: OutputPin + InputPin,
+    Delayer: DelayMs<u32> + DelayUs<u32>,
+{
+    pins: Pins<ControlPin, DBPin, PIN_CNT>,
+    delayer: Delayer,
+    line: LineMode,
+    font: Font,
+    display_on: State,
+    cursor_on: State,
+    cursor_blink: State,
+    direction: MoveDirection,
+    shift_type: ShiftType,
+    cursor_pos: (u8, u8),
+    display_offset: u8,
+    wait_interval_us: u32,
+    ram_type: RAMType,
+}
 
 impl<ControlPin, DBPin, const PIN_CNT: usize, Delayer> LCDExt
     for LCD<ControlPin, DBPin, PIN_CNT, Delayer>
@@ -260,63 +286,37 @@ where
     DBPin: OutputPin + InputPin,
     Delayer: DelayMs<u32> + DelayUs<u32>,
 {
-    fn calculate_pos_by_offset(&self, original_pos: (u8, u8), offset: (i8, i8)) -> (u8, u8) {
-        let line_capacity = self.get_line_capacity();
-        match self.get_line_mode() {
-            LineMode::OneLine => {
-                assert!(
-                    (offset.0.abs() as u8) < line_capacity,
-                    "x offset too big, should greater than -80 and less than 80"
-                );
-                assert!(offset.1 == 0, "y offset should always be 0 on OneLine Mode")
-            }
-            LineMode::TwoLine => {
-                assert!(
-                    (offset.0.abs() as u8) < line_capacity,
-                    "x offset too big, should greater than -40 and less than 40"
-                );
-                assert!(
-                    offset.1.abs() < 2,
-                    "y offset too big, should between -1 and 1"
-                )
-            }
+}
+
+impl<ControlPin, DBPin, const PIN_CNT: usize, Delayer> PinsInteraction
+    for LCD<ControlPin, DBPin, PIN_CNT, Delayer>
+where
+    ControlPin: OutputPin,
+    DBPin: OutputPin + InputPin,
+    Delayer: DelayMs<u32> + DelayUs<u32>,
+{
+    fn delay_and_send(&mut self, command: impl Into<FullCommand>, delay_us: u32) -> Option<u8> {
+        self.delayer.delay_us(delay_us);
+        self.pins.send(command.into())
+    }
+
+    fn wait_and_send(&mut self, command: impl Into<FullCommand>) -> Option<u8> {
+        self.wait_for_idle();
+        self.pins.send(command.into())
+    }
+
+    fn wait_for_idle(&mut self) {
+        while self.check_busy() {
+            self.delayer.delay_us(self.get_wait_interval_us());
         }
+    }
 
-        match self.get_line_mode() {
-            LineMode::OneLine => {
-                let raw_x_pos = (original_pos.0 as i8) + offset.0;
-                if raw_x_pos < 0 {
-                    ((raw_x_pos + line_capacity as i8) as u8, 0)
-                } else if raw_x_pos > line_capacity as i8 {
-                    ((raw_x_pos - line_capacity as i8) as u8, 0)
-                } else {
-                    (raw_x_pos as u8, 0)
-                }
-            }
-            LineMode::TwoLine => {
-                let mut x_overflow: i8 = 0;
+    fn check_busy(&mut self) -> bool {
+        let busy_state = self.pins.send(CommandSet::ReadBusyFlagAndAddress).unwrap();
 
-                // this likes a "adder" in logic circuit design
-
-                let mut raw_x_pos = (original_pos.0 as i8) + offset.0;
-
-                if raw_x_pos < 0 {
-                    raw_x_pos += 2;
-                    x_overflow = -1;
-                } else if raw_x_pos > line_capacity as i8 {
-                    raw_x_pos -= 2;
-                    x_overflow = 1;
-                }
-
-                let mut raw_y_pos = (original_pos.1 as i8) + offset.1 + x_overflow;
-                if raw_y_pos < 0 {
-                    raw_y_pos += 2
-                } else if raw_y_pos > 2 {
-                    raw_y_pos -= 2
-                };
-
-                (raw_x_pos as u8, raw_y_pos as u8)
-            }
+        match busy_state.check_bit(7) {
+            BitState::Clear => false,
+            BitState::Set => true,
         }
     }
 }
