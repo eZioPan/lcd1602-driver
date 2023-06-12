@@ -6,7 +6,8 @@ use embedded_hal::{
 use crate::{
     enums::basic_command::{Font, LineMode, MoveDirection, ShiftType, State},
     pins::Pins,
-    RAMType, StructAPI, LCD,
+    struct_api::StructAPI,
+    RAMType, LCD,
 };
 
 use super::{Builder, BuilderAPI};

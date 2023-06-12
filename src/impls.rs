@@ -3,11 +3,105 @@ use embedded_hal::{
     digital::v2::{InputPin, OutputPin},
 };
 
-use super::{
-    command_set::CommandSet,
-    enums::basic_command::{DataWidth, Font, LineMode, MoveDirection, ShiftType, State},
-    LCDBasic, PinsInteraction, RAMType, StructAPI, StructUtils, LCD,
+use crate::{
+    animation::LCDAnimation,
+    basic::LCDBasic,
+    enums::basic_command::{Font, LineMode, MoveDirection, RAMType, ShiftType, State},
+    ext::LCDExt,
+    struct_api::StructAPI,
+    struct_utils::StructUtils,
+    LCD,
 };
+
+impl<ControlPin, DBPin, const PIN_CNT: usize, Delayer> LCDExt
+    for LCD<ControlPin, DBPin, PIN_CNT, Delayer>
+where
+    ControlPin: OutputPin,
+    DBPin: OutputPin + InputPin,
+    Delayer: DelayMs<u32> + DelayUs<u32>,
+{
+}
+
+impl<ControlPin, DBPin, const PIN_CNT: usize, Delayer> LCDAnimation
+    for LCD<ControlPin, DBPin, PIN_CNT, Delayer>
+where
+    ControlPin: OutputPin,
+    DBPin: OutputPin + InputPin,
+    Delayer: DelayMs<u32> + DelayUs<u32>,
+{
+    fn delay_ms(&mut self, ms: u32) {
+        if ms > 0 {
+            self.delayer.delay_ms(ms);
+        }
+    }
+
+    fn delay_us(&mut self, us: u32) {
+        if us > 0 {
+            self.delayer.delay_us(us);
+        }
+    }
+}
+
+impl<ControlPin, DBPin, const PIN_CNT: usize, Delayer> LCDBasic
+    for LCD<ControlPin, DBPin, PIN_CNT, Delayer>
+where
+    ControlPin: OutputPin,
+    DBPin: OutputPin + InputPin,
+    Delayer: DelayMs<u32> + DelayUs<u32>,
+{
+    fn get_display_offset(&self) -> u8 {
+        self.display_offset
+    }
+
+    fn get_line_mode(&self) -> LineMode {
+        self.line
+    }
+
+    fn get_font(&self) -> Font {
+        self.font
+    }
+
+    fn get_display_state(&self) -> State {
+        self.display_on
+    }
+
+    fn get_cursor_state(&self) -> State {
+        self.cursor_on
+    }
+
+    fn get_cursor_blink_state(&self) -> State {
+        self.cursor_blink
+    }
+
+    fn get_default_direction(&self) -> MoveDirection {
+        self.direction
+    }
+
+    fn get_default_shift_type(&self) -> ShiftType {
+        self.shift_type
+    }
+
+    fn get_cursor_pos(&self) -> (u8, u8) {
+        assert!(
+            self.get_ram_type() == RAMType::DDRAM,
+            "Current in CGRAM, use .set_cursor_pos() to change to DDRAM"
+        );
+
+        self.cursor_pos
+    }
+
+    fn set_wait_interval_us(&mut self, interval: u32) {
+        self.wait_interval_us = interval
+    }
+
+    fn get_wait_interval_us(&self) -> u32 {
+        self.wait_interval_us
+    }
+
+    fn get_ram_type(&self) -> RAMType {
+        self.ram_type
+    }
+}
 
 impl<ControlPin, DBPin, const PIN_CNT: usize, Delayer> StructAPI
     for LCD<ControlPin, DBPin, PIN_CNT, Delayer>
@@ -16,53 +110,7 @@ where
     DBPin: OutputPin + InputPin,
     Delayer: DelayMs<u32> + DelayUs<u32>,
 {
-    fn internal_init_lcd(&mut self) {
-        // in initialization process, we'd better use "raw command", to strictly follow datasheet
-
-        // only first 2 or 3 commands are different between 4 pin and 8 pin mode
-        match PIN_CNT {
-            4 => {
-                self.delay_and_send(CommandSet::HalfFunctionSet, 40_000);
-
-                self.delay_and_send(
-                    CommandSet::FunctionSet(DataWidth::Bit4, self.get_line_mode(), self.get_font()),
-                    40,
-                );
-
-                self.delay_and_send(
-                    CommandSet::FunctionSet(DataWidth::Bit4, self.get_line_mode(), self.get_font()),
-                    40,
-                );
-            }
-
-            8 => {
-                self.delay_and_send(
-                    CommandSet::FunctionSet(DataWidth::Bit8, self.get_line_mode(), self.get_font()),
-                    40_000,
-                );
-
-                self.delay_and_send(
-                    CommandSet::FunctionSet(DataWidth::Bit8, self.get_line_mode(), self.get_font()),
-                    40,
-                );
-            }
-
-            _ => panic!("Pins other than 4 and 8 are not supported"),
-        }
-
-        self.wait_and_send(CommandSet::DisplayOnOff {
-            display: self.get_display_state(),
-            cursor: self.get_cursor_state(),
-            cursor_blink: self.get_cursor_blink_state(),
-        });
-
-        self.wait_and_send(CommandSet::ClearDisplay);
-
-        self.wait_and_send(CommandSet::EntryModeSet(
-            self.get_default_direction(),
-            self.get_default_shift_type(),
-        ));
-    }
+    fn internal_init_lcd(&mut self) {}
 
     fn internal_set_line_mode(&mut self, line: LineMode) {
         assert!(

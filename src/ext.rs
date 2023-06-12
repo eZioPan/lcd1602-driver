@@ -1,20 +1,10 @@
-use embedded_hal::{
-    blocking::delay::{DelayMs, DelayUs},
-    digital::v2::{InputPin, OutputPin},
-};
+use crate::{basic::LCDBasic, pin_interaction::PinsInteraction, struct_api::StructAPI};
 
-use super::{
-    command_set::CommandSet, enums::basic_command::State, LCDBasic, LCDExt, PinsInteraction,
-    RAMType, StructAPI, LCD,
-};
+use super::{command_set::CommandSet, enums::basic_command::State, RAMType};
 
-impl<ControlPin, DBPin, const PIN_CNT: usize, Delayer> LCDExt
-    for LCD<ControlPin, DBPin, PIN_CNT, Delayer>
-where
-    ControlPin: OutputPin,
-    DBPin: OutputPin + InputPin,
-    Delayer: DelayMs<u32> + DelayUs<u32>,
-{
+/// [LCDExt] traits provide common non-animation display methods
+pub trait LCDExt: LCDBasic + PinsInteraction + StructAPI {
+    /// toggle entire display on and off (it doesn't toggle backlight)
     fn toggle_display(&mut self) {
         match self.get_display_state() {
             State::Off => self.set_display_state(State::On),
@@ -22,16 +12,8 @@ where
         }
     }
 
-    fn write_str_to_cur(&mut self, str: &str) {
-        str.chars().for_each(|char| self.write_char_to_cur(char));
-    }
-
-    fn write_str_to_pos(&mut self, str: &str, pos: (u8, u8)) {
-        self.set_cursor_pos(pos);
-        self.write_str_to_cur(str);
-    }
-
-    /// In this implementation, character only support
+    /// write [char] to current position
+    /// In default implementation, character only support
     /// from ASCII 0x20 (white space) to ASCII 0x7D (`}`)
     fn write_char_to_cur(&mut self, char: char) {
         assert!(
@@ -48,21 +30,18 @@ where
         self.write_u8_to_cur(out_byte);
     }
 
-    fn write_graph_to_pos(&mut self, index: u8, pos: (u8, u8)) {
-        assert!(index < 8, "Only 8 graphs allowed in CGRAM");
-        self.write_byte_to_pos(index, pos);
+    /// write string to current position
+    fn write_str_to_cur(&mut self, str: &str) {
+        str.chars().for_each(|char| self.write_char_to_cur(char));
     }
 
+    /// write a byte to specific position
     fn write_byte_to_pos(&mut self, byte: impl Into<u8>, pos: (u8, u8)) {
         self.set_cursor_pos(pos);
         self.wait_and_send(CommandSet::WriteDataToRAM(byte.into()));
     }
 
-    fn write_char_to_pos(&mut self, char: char, pos: (u8, u8)) {
-        self.set_cursor_pos(pos);
-        self.write_char_to_cur(char);
-    }
-
+    /// read a byte from specific position
     fn read_byte_from_pos(&mut self, pos: (u8, u8)) -> u8 {
         let original_pos = self.get_cursor_pos();
         self.set_cursor_pos(pos);
@@ -71,6 +50,23 @@ where
         data
     }
 
+    /// write a char to specific position
+    fn write_char_to_pos(&mut self, char: char, pos: (u8, u8)) {
+        self.set_cursor_pos(pos);
+        self.write_char_to_cur(char);
+    }
+
+    /// write string to specific position
+    fn write_str_to_pos(&mut self, str: &str, pos: (u8, u8)) {
+        self.set_cursor_pos(pos);
+        self.write_str_to_cur(str);
+    }
+    /// write custom graph to specific position
+    fn write_graph_to_pos(&mut self, index: u8, pos: (u8, u8)) {
+        assert!(index < 8, "Only 8 graphs allowed in CGRAM");
+        self.write_byte_to_pos(index, pos);
+    }
+    // read custom graph data from CGRAM
     fn read_graph_from_cgram(&mut self, index: u8) -> [u8; 8] {
         assert!(index < 8, "index too big, should less than 8");
 
@@ -86,6 +82,7 @@ where
         graph
     }
 
+    // change cursor position with relative offset
     fn offset_cursor_pos(&mut self, offset: (i8, i8)) {
         self.set_cursor_pos(self.internal_calculate_pos_by_offset(offset));
     }

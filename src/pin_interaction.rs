@@ -3,13 +3,22 @@ use embedded_hal::{
     digital::v2::{InputPin, OutputPin},
 };
 
+use crate::basic::LCDBasic;
+
 use super::{
     command_set::CommandSet,
     full_command::FullCommand,
     pins::PinsCrateLevelAPI,
     utils::{BitOps, BitState},
-    LCDBasic, PinsInteraction, LCD,
+    LCD,
 };
+
+pub trait PinsInteraction {
+    fn delay_and_send(&mut self, command: impl Into<FullCommand>, wait_ms: u32) -> Option<u8>;
+    fn wait_and_send(&mut self, command: impl Into<FullCommand>) -> Option<u8>;
+    fn wait_for_idle(&mut self);
+    fn check_busy(&mut self) -> bool;
+}
 
 impl<ControlPin, DBPin, const PIN_CNT: usize, Delayer> PinsInteraction
     for LCD<ControlPin, DBPin, PIN_CNT, Delayer>

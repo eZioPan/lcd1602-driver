@@ -1,7 +1,7 @@
 mod impl_from_command_set;
 mod impl_full_command_api;
 
-pub(super) struct FullCommand {
+pub struct FullCommand {
     rs: RegisterSelection,
     rw: ReadWriteOp,
     data: Option<Bits>, // if it's a read command, then data should be filled by reading process

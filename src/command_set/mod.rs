@@ -3,7 +3,7 @@
 use crate::enums::basic_command::{DataWidth, Font, LineMode, MoveDirection, ShiftType, State};
 
 #[derive(Clone, Copy)]
-pub(super) enum CommandSet {
+pub enum CommandSet {
     ClearDisplay,
     ReturnHome,
     EntryModeSet(MoveDirection, ShiftType),

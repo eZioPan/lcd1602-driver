@@ -1,20 +1,18 @@
-use embedded_hal::{
-    blocking::delay::{DelayMs, DelayUs},
-    digital::v2::{InputPin, OutputPin},
-};
+use crate::{basic::LCDBasic, ext::LCDExt, struct_utils::StructUtils};
 
 use super::{
     enums::basic_command::{MoveDirection, ShiftType, State},
-    FlipStyle, LCDAnimation, LCDBasic, LCDExt, MoveStyle, StructUtils, LCD,
+    FlipStyle, MoveStyle,
 };
 
-impl<ControlPin, DBPin, const PIN_CNT: usize, Delayer> LCDAnimation
-    for LCD<ControlPin, DBPin, PIN_CNT, Delayer>
-where
-    ControlPin: OutputPin,
-    DBPin: OutputPin + InputPin,
-    Delayer: DelayMs<u32> + DelayUs<u32>,
-{
+/// The [LCDAnimation] trait provides methods for animating the display
+pub trait LCDAnimation: LCDExt + LCDBasic + StructUtils {
+    /// Make the entire screen blink
+    ///
+    /// # Arguments
+    ///
+    /// * `count` - the number of times to blink the screen. If the value is `0`, the screen will blink endless.
+    /// * `interval_us` - The interval (in microseconds) at which the screen state changes
     fn full_display_blink(&mut self, count: u32, interval_us: u32) {
         match count == 0 {
             true => loop {
@@ -30,6 +28,12 @@ where
         }
     }
 
+    /// Typewriter-style display
+    ///
+    /// # Arguments
+    ///
+    /// * `str` - string to display
+    /// * `delay_us` - The interval (in microseconds) of each character show up
     fn typewriter_write(&mut self, str: &str, delay_us: u32) {
         str.chars().for_each(|char| {
             self.delay_us(delay_us);
@@ -37,13 +41,22 @@ where
         })
     }
 
+    /// Split-Flap-style display
+    ///
+    /// # Arguments
+    ///
+    /// * `str` - string to display
+    /// * `fs` - flip style, see [FlipStyle]
+    /// * `max_flip_cnt` - The maximum number of times to flip the display before reaching the target character
+    /// * `per_flip_delay_us` - The delay (in microseconds) between each flip. It is recommended to set this value to at least `100_000`.
+    /// * `per_char_flip_delay_us` - Used in [FlipStyle::Sequential] mode, this is the time (in microseconds) to wait between flipping each character
     fn split_flap_write(
         &mut self,
         str: &str,
         fs: FlipStyle,
-        max_flip_count: u8,
+        max_flip_cnt: u8,
         per_flip_delay_us: u32,
-        per_char_delay_us: Option<u32>,
+        per_char_flip_delay_us: Option<u32>,
     ) {
         // Checking if all characters are suitable for split flap effect (should in ASCII 0x20 to 0x7D)
         let test_result = str
@@ -63,22 +76,21 @@ where
         match fs {
             FlipStyle::Sequential => {
                 assert!(
-                    per_char_delay_us.is_some(),
+                    per_char_flip_delay_us.is_some(),
                     "Should set some per char delay in Sequential Mode"
                 );
                 str.chars().for_each(|char| {
                     let cur_byte = char as u8;
 
-                    let flap_start_byte = if max_flip_count == 0 || cur_byte - max_flip_count < 0x20
-                    {
+                    let flap_start_byte = if max_flip_cnt == 0 || cur_byte - max_flip_cnt < 0x20 {
                         0x20
                     } else {
-                        cur_byte - max_flip_count
+                        cur_byte - max_flip_cnt
                     };
 
                     let cur_pos = self.get_cursor_pos();
 
-                    self.delay_us(per_char_delay_us.unwrap());
+                    self.delay_us(per_char_flip_delay_us.unwrap());
                     (flap_start_byte..=cur_byte).for_each(|byte| {
                         self.delay_us(per_flip_delay_us);
                         self.write_byte_to_pos(byte, cur_pos);
@@ -95,14 +107,14 @@ where
                 let max_char_byte = str.chars().max().unwrap() as u8;
                 let str_len = str.chars().count();
 
-                let flap_start_byte = if max_flip_count == 0 {
+                let flap_start_byte = if max_flip_cnt == 0 {
                     0x20
-                } else if max_char_byte - min_char_byte > max_flip_count {
+                } else if max_char_byte - min_char_byte > max_flip_cnt {
                     min_char_byte
-                } else if max_char_byte - max_flip_count < 0x20 {
+                } else if max_char_byte - max_flip_cnt < 0x20 {
                     0x20
                 } else {
-                    max_char_byte - max_flip_count
+                    max_char_byte - max_flip_cnt
                 };
 
                 let start_pos = self.get_cursor_pos();
@@ -145,6 +157,14 @@ where
         }
     }
 
+    /// Move the display window to the specified position (measured from the upper-left corner of the display)
+    ///
+    /// # Arguments
+    ///
+    /// * `target_pos` - The target position of the display window
+    /// * `ms` - The style of movement, see [MoveStyle]
+    /// * `display_state_when_shift` - Whether to turn off the screen during the move
+    /// * `delay_us_per_step` - The delay (in microseconds) between each step of the move
     fn shift_display_to_pos(
         &mut self,
         target_pos: u8,
@@ -229,15 +249,9 @@ where
         self.set_display_state(before_state);
     }
 
-    fn delay_ms(&mut self, ms: u32) {
-        if ms > 0 {
-            self.delayer.delay_ms(ms);
-        }
-    }
+    /// Wait for specified milliseconds
+    fn delay_ms(&mut self, ms: u32);
 
-    fn delay_us(&mut self, us: u32) {
-        if us > 0 {
-            self.delayer.delay_us(us);
-        }
-    }
+    /// Wait for specified microseconds
+    fn delay_us(&mut self, us: u32);
 }
