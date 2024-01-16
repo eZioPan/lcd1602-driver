@@ -1,70 +1,34 @@
-use embedded_hal::{
-    blocking::delay::{DelayMs, DelayUs},
-    digital::v2::{InputPin, OutputPin},
-};
+use crate::command::{DataWidth, Font, LineMode, MoveDirection, RAMType, ShiftType, State};
 
-use super::{
-    command_set::CommandSet,
-    enums::basic_command::{DataWidth, Font, LineMode, MoveDirection, ShiftType, State},
-    LCDBasic, PinsInteraction, RAMType, StructAPI, StructUtils, LCD,
-};
+#[derive(Default)]
+pub struct LcdState {
+    data_width: DataWidth,
+    line: LineMode,
+    font: Font,
+    display_on: State,
+    cursor_on: State,
+    cursor_blink: State,
+    direction: MoveDirection,
+    shift_type: ShiftType,
+    cursor_pos: (u8, u8),
+    display_offset: u8,
+    ram_type: RAMType,
+}
 
-impl<ControlPin, DBPin, const PIN_CNT: usize, Delayer> StructAPI
-    for LCD<ControlPin, DBPin, PIN_CNT, Delayer>
-where
-    ControlPin: OutputPin,
-    DBPin: OutputPin + InputPin,
-    Delayer: DelayMs<u32> + DelayUs<u32>,
-{
-    fn internal_init_lcd(&mut self) {
-        // in initialization process, we'd better use "raw command", to strictly follow datasheet
-
-        // only first 2 or 3 commands are different between 4 pin and 8 pin mode
-        match PIN_CNT {
-            4 => {
-                self.delay_and_send(CommandSet::HalfFunctionSet, 40_000);
-
-                self.delay_and_send(
-                    CommandSet::FunctionSet(DataWidth::Bit4, self.get_line_mode(), self.get_font()),
-                    40,
-                );
-
-                self.delay_and_send(
-                    CommandSet::FunctionSet(DataWidth::Bit4, self.get_line_mode(), self.get_font()),
-                    40,
-                );
-            }
-
-            8 => {
-                self.delay_and_send(
-                    CommandSet::FunctionSet(DataWidth::Bit8, self.get_line_mode(), self.get_font()),
-                    40_000,
-                );
-
-                self.delay_and_send(
-                    CommandSet::FunctionSet(DataWidth::Bit8, self.get_line_mode(), self.get_font()),
-                    40,
-                );
-            }
-
-            _ => panic!("Pins other than 4 and 8 are not supported"),
-        }
-
-        self.wait_and_send(CommandSet::DisplayOnOff {
-            display: self.get_display_state(),
-            cursor: self.get_cursor_state(),
-            cursor_blink: self.get_cursor_blink_state(),
-        });
-
-        self.wait_and_send(CommandSet::ClearDisplay);
-
-        self.wait_and_send(CommandSet::EntryModeSet(
-            self.get_default_direction(),
-            self.get_default_shift_type(),
-        ));
+impl LcdState {
+    pub fn get_data_width(&self) -> DataWidth {
+        self.data_width
     }
 
-    fn internal_set_line_mode(&mut self, line: LineMode) {
+    pub fn set_data_width(&mut self, data_width: DataWidth) {
+        self.data_width = data_width
+    }
+
+    pub fn get_line_mode(&self) -> LineMode {
+        self.line
+    }
+
+    pub fn set_line_mode(&mut self, line: LineMode) {
         assert!(
             (self.get_font() == Font::Font5x11) && (line == LineMode::OneLine),
             "font is 5x11, line cannot be 2"
@@ -73,7 +37,18 @@ where
         self.line = line;
     }
 
-    fn internal_set_font(&mut self, font: Font) {
+    pub fn get_line_capacity(&self) -> u8 {
+        match self.get_line_mode() {
+            LineMode::OneLine => 80,
+            LineMode::TwoLine => 40,
+        }
+    }
+
+    pub fn get_font(&self) -> Font {
+        self.font
+    }
+
+    pub fn set_font(&mut self, font: Font) {
         assert!(
             (self.get_line_mode() == LineMode::TwoLine) && (font == Font::Font5x8),
             "there is 2 line, font cannot be 5x11"
@@ -82,27 +57,56 @@ where
         self.font = font;
     }
 
-    fn internal_set_display_state(&mut self, display: State) {
+    pub fn get_display_state(&self) -> State {
+        self.display_on
+    }
+
+    pub fn set_display_state(&mut self, display: State) {
         self.display_on = display;
     }
 
-    fn internal_set_cursor_state(&mut self, cursor: State) {
+    pub fn get_cursor_state(&self) -> State {
+        self.cursor_on
+    }
+
+    pub fn set_cursor_state(&mut self, cursor: State) {
         self.cursor_on = cursor;
     }
 
-    fn internal_set_cursor_blink(&mut self, blink: State) {
+    pub fn get_cursor_blink(&self) -> State {
+        self.cursor_blink
+    }
+
+    pub fn set_cursor_blink(&mut self, blink: State) {
         self.cursor_blink = blink;
     }
 
-    fn internal_set_direction(&mut self, dir: MoveDirection) {
+    pub fn get_direction(&self) -> MoveDirection {
+        self.direction
+    }
+
+    pub fn set_direction(&mut self, dir: MoveDirection) {
         self.direction = dir;
     }
 
-    fn internal_set_shift(&mut self, shift: ShiftType) {
+    pub fn get_shift(&self) -> ShiftType {
+        self.shift_type
+    }
+
+    pub fn set_shift(&mut self, shift: ShiftType) {
         self.shift_type = shift;
     }
 
-    fn internal_set_cursor_pos(&mut self, pos: (u8, u8)) {
+    pub fn get_cursor_pos(&self) -> (u8, u8) {
+        assert!(
+            self.get_ram_type() == RAMType::DDRam,
+            "Current in CGRAM, use .set_cursor_pos() to change to DDRAM"
+        );
+
+        self.cursor_pos
+    }
+
+    pub fn set_cursor_pos(&mut self, pos: (u8, u8)) {
         let line_capacity = self.get_line_capacity();
         match self.line {
             LineMode::OneLine => {
@@ -118,7 +122,11 @@ where
         self.cursor_pos = pos;
     }
 
-    fn internal_set_display_offset(&mut self, offset: u8) {
+    pub fn get_display_offset(&self) -> u8 {
+        self.display_offset
+    }
+
+    pub fn set_display_offset(&mut self, offset: u8) {
         if offset >= self.get_line_capacity() {
             match self.get_line_mode() {
                 LineMode::OneLine => panic!("Display Offset too big, should not bigger than 79"),
@@ -129,7 +137,7 @@ where
         self.display_offset = offset;
     }
 
-    fn internal_shift_cursor_or_display(&mut self, st: ShiftType, dir: MoveDirection) {
+    pub fn shift_cursor_or_display(&mut self, st: ShiftType, dir: MoveDirection) {
         let cur_display_offset = self.get_display_offset();
         let cur_cursor_pos = self.get_cursor_pos();
         let line_capacity = self.get_line_capacity();
@@ -139,40 +147,40 @@ where
                 MoveDirection::LeftToRight => match self.get_line_mode() {
                     LineMode::OneLine => {
                         if cur_cursor_pos.0 == line_capacity - 1 {
-                            self.internal_set_cursor_pos((0, 0));
+                            self.set_cursor_pos((0, 0));
                         } else {
-                            self.internal_set_cursor_pos((cur_cursor_pos.0 + 1, 0));
+                            self.set_cursor_pos((cur_cursor_pos.0 + 1, 0));
                         }
                     }
                     LineMode::TwoLine => {
                         if cur_cursor_pos.0 == line_capacity - 1 {
                             if cur_cursor_pos.1 == 0 {
-                                self.internal_set_cursor_pos((0, 1));
+                                self.set_cursor_pos((0, 1));
                             } else {
-                                self.internal_set_cursor_pos((0, 0));
+                                self.set_cursor_pos((0, 0));
                             }
                         } else {
-                            self.internal_set_cursor_pos((cur_cursor_pos.0 + 1, cur_cursor_pos.1));
+                            self.set_cursor_pos((cur_cursor_pos.0 + 1, cur_cursor_pos.1));
                         }
                     }
                 },
                 MoveDirection::RightToLeft => match self.get_line_mode() {
                     LineMode::OneLine => {
                         if cur_cursor_pos.0 == 0 {
-                            self.internal_set_cursor_pos((line_capacity - 1, 0));
+                            self.set_cursor_pos((line_capacity - 1, 0));
                         } else {
-                            self.internal_set_cursor_pos((cur_cursor_pos.0 - 1, 0));
+                            self.set_cursor_pos((cur_cursor_pos.0 - 1, 0));
                         }
                     }
                     LineMode::TwoLine => {
                         if cur_cursor_pos.0 == 0 {
                             if cur_cursor_pos.1 == 0 {
-                                self.internal_set_cursor_pos((line_capacity - 1, 1));
+                                self.set_cursor_pos((line_capacity - 1, 1));
                             } else {
-                                self.internal_set_cursor_pos((line_capacity - 1, 0));
+                                self.set_cursor_pos((line_capacity - 1, 0));
                             }
                         } else {
-                            self.internal_set_cursor_pos((cur_cursor_pos.0 - 1, cur_cursor_pos.1));
+                            self.set_cursor_pos((cur_cursor_pos.0 - 1, cur_cursor_pos.1));
                         }
                     }
                 },
@@ -180,51 +188,44 @@ where
             ShiftType::CursorAndDisplay => match dir {
                 MoveDirection::LeftToRight => {
                     if cur_display_offset == line_capacity - 1 {
-                        self.internal_set_display_offset(0)
+                        self.set_display_offset(0)
                     } else {
-                        self.internal_set_display_offset(cur_display_offset + 1)
+                        self.set_display_offset(cur_display_offset + 1)
                     };
                 }
                 MoveDirection::RightToLeft => {
                     if cur_display_offset == 0 {
-                        self.internal_set_display_offset(line_capacity - 1)
+                        self.set_display_offset(line_capacity - 1)
                     } else {
-                        self.internal_set_display_offset(cur_display_offset - 1)
+                        self.set_display_offset(cur_display_offset - 1)
                     }
                 }
             },
         }
     }
 
-    fn internal_set_ram_type(&mut self, ram_type: RAMType) {
+    pub fn get_ram_type(&self) -> RAMType {
+        self.ram_type
+    }
+
+    pub fn set_ram_type(&mut self, ram_type: RAMType) {
         self.ram_type = ram_type;
     }
 
-    fn internal_calculate_pos_by_offset(&self, offset: (i8, i8)) -> (u8, u8) {
-        self.calculate_pos_by_offset(self.get_cursor_pos(), offset)
-    }
-}
-
-impl<ControlPin, DBPin, const PIN_CNT: usize, Delayer> StructUtils
-    for LCD<ControlPin, DBPin, PIN_CNT, Delayer>
-where
-    ControlPin: OutputPin,
-    DBPin: OutputPin + InputPin,
-    Delayer: DelayMs<u32> + DelayUs<u32>,
-{
-    fn calculate_pos_by_offset(&self, original_pos: (u8, u8), offset: (i8, i8)) -> (u8, u8) {
+    pub fn calculate_pos_by_offset(&self, original_pos: (u8, u8), offset: (i8, i8)) -> (u8, u8) {
         let line_capacity = self.get_line_capacity();
+
         match self.get_line_mode() {
             LineMode::OneLine => {
                 assert!(
-                    (offset.0.abs() as u8) < line_capacity,
+                    offset.0.unsigned_abs() < line_capacity,
                     "x offset too big, should greater than -80 and less than 80"
                 );
                 assert!(offset.1 == 0, "y offset should always be 0 on OneLine Mode")
             }
             LineMode::TwoLine => {
                 assert!(
-                    (offset.0.abs() as u8) < line_capacity,
+                    offset.0.unsigned_abs() < line_capacity,
                     "x offset too big, should greater than -40 and less than 40"
                 );
                 assert!(

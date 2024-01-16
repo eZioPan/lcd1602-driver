@@ -13,4 +13,9 @@ categories = ["embedded", "hardware-support", "no-std"]
 keywords = ["lcd1602", "display"]
 
 [dependencies]
-embedded-hal = { version = "0.2.*", features = ["unproven"] }
+embedded-hal = { version = "1" }
+
+[features]
+default = ["LcdAnim"]
+LcdAnim = ["LcdExt"]
+LcdExt = []

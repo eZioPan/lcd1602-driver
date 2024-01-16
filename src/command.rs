@@ -1,12 +1,175 @@
-use crate::{
-    command_set::CommandSet,
-    enums::basic_command::{DataWidth, Font, LineMode, MoveDirection, ShiftType, State},
-    utils::BitOps,
-};
+use embedded_hal::delay::DelayNs;
 
-use super::{Bits, FullCommand, FullCommandAPI, ReadWriteOp, RegisterSelection};
+use crate::utils::{BitOps, BitState};
 
-impl From<CommandSet> for FullCommand {
+#[derive(Clone, Copy)]
+pub enum CommandSet {
+    ClearDisplay,
+    ReturnHome,
+    EntryModeSet(MoveDirection, ShiftType),
+    DisplayOnOff {
+        display: State,
+        cursor: State,
+        cursor_blink: State,
+    },
+    CursorOrDisplayShift(ShiftType, MoveDirection),
+    // this is not a command from datasheet,
+    // it's the first (half) command of 4 pin mode
+    // we name it, to make things tidy
+    HalfFunctionSet,
+    FunctionSet(DataWidth, LineMode, Font),
+    SetCGRAM(u8),
+    SetDDRAM(u8),
+    ReadBusyFlagAndAddress,
+    WriteDataToRAM(u8),
+    ReadDataFromRAM,
+}
+
+#[derive(Clone, Copy, PartialEq, Default)]
+pub enum MoveDirection {
+    RightToLeft,
+    #[default]
+    LeftToRight,
+}
+
+#[derive(Clone, Copy, Default)]
+pub enum ShiftType {
+    #[default]
+    CursorOnly,
+    CursorAndDisplay,
+}
+
+#[derive(Clone, Copy, PartialEq, Default)]
+pub enum State {
+    Off,
+    #[default]
+    On,
+}
+
+#[derive(Clone, Copy, Default)]
+pub enum DataWidth {
+    #[default]
+    Bit4,
+    Bit8,
+}
+
+#[derive(Clone, Copy, Default, PartialEq)]
+pub enum LineMode {
+    OneLine,
+    #[default]
+    TwoLine,
+}
+
+#[derive(Clone, Copy, Default, PartialEq)]
+pub enum Font {
+    #[default]
+    Font5x8,
+    Font5x11,
+}
+
+/// The type of memory to access
+#[derive(Clone, Copy, Default, PartialEq)]
+pub enum RAMType {
+    /// Display Data RAM
+    #[default]
+    DDRam,
+    /// Character Generator RAM
+    CGRam,
+}
+
+pub struct Command {
+    rs: RegisterSelection,
+    rw: ReadWriteOp,
+    data: Option<Bits>, // if it's a read command, then data should be filled by reading process
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum RegisterSelection {
+    Command,
+    Data,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub(super) enum ReadWriteOp {
+    Write,
+    Read,
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum Bits {
+    Bit4(u8),
+    Bit8(u8),
+}
+
+pub trait SendCommand {
+    fn send(&mut self, command: impl Into<Command>) -> Option<u8>;
+
+    fn delay_and_send(
+        &mut self,
+        command: impl Into<Command>,
+        delayer: &mut impl DelayNs,
+        delay_us: u32,
+    ) -> Option<u8> {
+        delayer.delay_us(delay_us);
+        self.send(command)
+    }
+
+    fn wait_and_send(
+        &mut self,
+        command: impl Into<Command>,
+        delayer: &mut impl DelayNs,
+        poll_interval_us: u32,
+    ) -> Option<u8> {
+        self.wait_for_idle(delayer, poll_interval_us);
+        self.send(command)
+    }
+    fn wait_for_idle(&mut self, delayer: &mut impl DelayNs, poll_interval_us: u32) {
+        while self.check_busy() {
+            delayer.delay_us(poll_interval_us);
+        }
+    }
+    fn check_busy(&mut self) -> bool {
+        let busy_state = self.send(CommandSet::ReadBusyFlagAndAddress).unwrap();
+        matches!(busy_state.check_bit(7), BitState::Set)
+    }
+}
+
+#[allow(dead_code)]
+impl Command {
+    pub(crate) fn new(rs: RegisterSelection, rw: ReadWriteOp, data: Option<Bits>) -> Self {
+        if (rw == ReadWriteOp::Write) && (data.is_none()) {
+            panic!("Write Operation Should have Data");
+        }
+
+        Self { rs, rw, data }
+    }
+
+    pub(crate) fn get_register_selection(&self) -> RegisterSelection {
+        self.rs
+    }
+
+    pub(crate) fn set_register_selection(&mut self, rs: RegisterSelection) {
+        self.rs = rs
+    }
+
+    pub(crate) fn get_read_write_op(&self) -> ReadWriteOp {
+        self.rw
+    }
+
+    pub(crate) fn set_read_write_op(&mut self, rw: ReadWriteOp) {
+        self.rw = rw
+    }
+
+    pub(crate) fn get_data(&self) -> Option<Bits> {
+        self.data
+    }
+
+    pub(crate) fn set_data(&mut self, data: Option<Bits>) {
+        self.data = data
+    }
+}
+
+impl From<CommandSet> for Command {
     fn from(command: CommandSet) -> Self {
         match command {
             CommandSet::ClearDisplay => {
@@ -19,7 +182,7 @@ impl From<CommandSet> for FullCommand {
             }
 
             CommandSet::ReturnHome => {
-                let raw_bits: u8 = 0b0000_010;
+                let raw_bits: u8 = 0b0000_0010;
                 Self::new(
                     RegisterSelection::Command,
                     ReadWriteOp::Write,

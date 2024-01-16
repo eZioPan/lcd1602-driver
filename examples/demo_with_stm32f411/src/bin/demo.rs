@@ -7,7 +7,7 @@
 //! LCD1602 <-> STM32F411RET6
 //!     Vss <-> GND
 //!     Vdd <-> 5V (It is best to use an external source for the 5V pin, such as the 5V output from a DAPLink device or USB.)
-//!      V0 <-> potentiometer <-> 5V (to adjust the display contrast)
+//!      V0 <-> potentiometer <-> 5V & GND (to adjust the display contrast)
 //!      RS <-> PA0
 //!      RW <-> PA1
 //!      EN <-> PA2 (and optionally connect to a 4.7 kOhm Pulldown resistor, to stable voltage level when STM32 reset)
@@ -26,14 +26,12 @@ use rtt_target::rtt_init_print;
 use stm32f4xx_hal::{pac, prelude::*};
 
 use lcd1602_driver::{
-    builder::{Builder, BuilderAPI},
-    enums::{
-        animation::{FlipStyle, MoveStyle},
-        basic_command::{Font, LineMode, MoveDirection, ShiftType, State},
-    },
-    pins::{FourPinsAPI, Pins},
+    builder::Builder,
+    command::{DataWidth, MoveDirection, State},
+    impls::parallel_sender::ParallelSender,
+    lcd::{FlipStyle, MoveStyle},
+    state::LcdState,
     utils::BitOps,
-    LCDAnimation, LCDBasic, LCDExt,
 };
 
 // a heart shape
@@ -49,9 +47,9 @@ fn main() -> ! {
     let cp = pac::CorePeripherals::take().expect("Cannot take core peripherals");
 
     let rcc = dp.RCC.constrain();
-    let clocks = rcc.cfgr.use_hse(8.MHz()).freeze();
+    let clocks = rcc.cfgr.use_hse(12.MHz()).freeze();
 
-    let delayer = cp.SYST.delay(&clocks);
+    let mut delayer = cp.SYST.delay(&clocks);
 
     // init needed digital pins
 
@@ -84,21 +82,16 @@ fn main() -> ! {
         .erase();
 
     // put pins together
-    let lcd_pins = Pins::new(rs_pin, rw_pin, en_pin, db4_pin, db5_pin, db6_pin, db7_pin);
+    let mut sender =
+        ParallelSender::new_4pin(rs_pin, rw_pin, en_pin, db4_pin, db5_pin, db6_pin, db7_pin);
 
-    // setup a builder
-    let lcd_builder = Builder::new(lcd_pins, delayer)
-        .set_blink(State::On)
-        .set_cursor(State::On)
-        .set_direction(MoveDirection::LeftToRight)
-        .set_display(State::On)
-        .set_font(Font::Font5x8)
-        .set_line(LineMode::TwoLine)
-        .set_shift(ShiftType::CursorOnly)
-        .set_wait_interval_us(10);
+    let mut lcd_state = LcdState::default();
+    lcd_state.set_data_width(DataWidth::Bit4);
 
     // init LCD1602
-    let mut lcd = lcd_builder.build_and_init();
+    let mut lcd = Builder::new(&mut sender, &mut delayer, lcd_state, 10).init();
+
+    lcd.clean_display();
 
     // draw a little heart in CGRAM
     lcd.write_graph_to_cgram(1, &HEART);
@@ -109,6 +102,8 @@ fn main() -> ! {
     graph_data[1].set_bit(2);
     graph_data[2].set_bit(2);
     lcd.write_graph_to_cgram(2, &graph_data);
+
+    lcd.set_cursor_blink_state(State::On);
 
     // to test function works
     // we set cursor 1 step right
@@ -144,16 +139,22 @@ fn main() -> ! {
     // turn off cursor blinking, so that cursor will only be a underline
     lcd.set_cursor_blink_state(State::Off);
 
-    lcd.typewriter_write("hello, ", 250_000);
+    lcd.typewriter_write("Hello, ", 250_000);
 
     // to test right to left write in
     // move cursor to left end of display window, then type string in reverse order
-    lcd.set_default_direction(MoveDirection::RightToLeft);
+    lcd.set_direction(MoveDirection::RightToLeft);
     lcd.set_cursor_pos((15, 1));
     lcd.typewriter_write("~!", 250_000);
     // and the 2 type of split flap display effect
-    lcd.split_flap_write("2061", FlipStyle::Simultaneous, 0, 150_000, None);
-    lcd.split_flap_write("DCL", FlipStyle::Sequential, 10, 150_000, Some(250_000));
+    lcd.split_flap_write("2061", FlipStyle::Simultaneous, None, 150_000, None);
+    lcd.split_flap_write(
+        "DCL",
+        FlipStyle::Sequential,
+        Some(10),
+        150_000,
+        Some(250_000),
+    );
 
     lcd.set_cursor_state(State::Off);
 
@@ -180,5 +181,6 @@ fn main() -> ! {
     lcd.delay_ms(1_000);
     lcd.full_display_blink(3, 500_000);
 
+    #[allow(clippy::empty_loop)]
     loop {}
 }

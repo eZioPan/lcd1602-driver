@@ -1,4 +1,16 @@
-use super::{BitOps, BitState};
+//! common tools
+
+pub enum BitState {
+    Clear,
+    Set,
+}
+
+/// simple bit ops
+pub trait BitOps {
+    fn set_bit(&mut self, pos: u8);
+    fn clear_bit(&mut self, pos: u8);
+    fn check_bit(&self, pos: u8) -> BitState;
+}
 
 impl BitOps for u8 {
     fn set_bit(&mut self, pos: u8) {
