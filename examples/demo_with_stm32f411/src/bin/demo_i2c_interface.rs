@@ -1,35 +1,19 @@
-//! Drive LCD1602 with a STM32F411RET6 in 4 Pin Mode
-//!
-//! this demo use many different read/write functions intentionally, to test functions works just fine.
-
-//! Wiring diagram
-//!
-//! LCD1602 <-> STM32F411RET6
-//!     Vss <-> GND
-//!     Vdd <-> 5V (It is best to use an external source for the 5V pin, such as the 5V output from a DAPLink device or USB.)
-//!      V0 <-> potentiometer <-> 5V & GND (to adjust the display contrast)
-//!      RS <-> PA0
-//!      RW <-> PA1
-//!      EN <-> PA2 (and optionally connect to a 4.7 kOhm Pulldown resistor, to stable voltage level when STM32 reset)
-//!      D4 <-> PA3
-//!      D5 <-> PA4
-//!      D6 <-> PA5
-//!      D7 <-> PA6
-//!       A <-> 5V
-//!       K <-> GND
-
 #![no_std]
 #![no_main]
 
 use panic_rtt_target as _;
 use rtt_target::rtt_init_print;
-use stm32f4xx_hal::{pac, prelude::*};
+use stm32f4xx_hal::{
+    i2c::{self, I2c},
+    pac,
+    prelude::*,
+};
 
 use lcd1602_driver::{
     builder::Builder,
     command::{DataWidth, MoveDirection, State},
-    impls::parallel_sender::ParallelSender,
     lcd::{FlipStyle, MoveStyle},
+    sender::i2c_sender::I2cSender,
     state::LcdState,
     utils::BitOps,
 };
@@ -53,45 +37,23 @@ fn main() -> ! {
 
     // init needed digital pins
 
-    let gpioa = dp.GPIOA.split();
+    let gpiob = dp.GPIOB.split();
 
-    // Push-pull mode for a fast interaction
-    let rs_pin = gpioa.pa0.into_push_pull_output().erase();
-    let rw_pin = gpioa.pa1.into_push_pull_output().erase();
-    let en_pin = gpioa.pa2.into_push_pull_output().erase();
-
-    let db4_pin = gpioa
-        .pa3
-        .into_open_drain_output()
-        .internal_pull_up(true)
-        .erase();
-    let db5_pin = gpioa
-        .pa4
-        .into_open_drain_output()
-        .internal_pull_up(true)
-        .erase();
-    let db6_pin = gpioa
-        .pa5
-        .into_open_drain_output()
-        .internal_pull_up(true)
-        .erase();
-    let db7_pin = gpioa
-        .pa6
-        .into_open_drain_output()
-        .internal_pull_up(true)
-        .erase();
+    let mut i2c = I2c::new(
+        dp.I2C1,
+        (gpiob.pb6, gpiob.pb7),
+        i2c::Mode::standard(100.kHz()), // The PCF8574T max I2C speed
+        &clocks,
+    );
 
     // put pins together
-    let mut sender =
-        ParallelSender::new_4pin(rs_pin, rw_pin, en_pin, db4_pin, db5_pin, db6_pin, db7_pin);
+    let mut sender = I2cSender::new(&mut i2c, 0x27);
 
     let mut lcd_state = LcdState::default();
     lcd_state.set_data_width(DataWidth::Bit4);
 
     // init LCD1602
     let mut lcd = Builder::new(&mut sender, &mut delayer, lcd_state, 10).init();
-
-    lcd.clean_display();
 
     // draw a little heart in CGRAM
     lcd.write_graph_to_cgram(1, &HEART);

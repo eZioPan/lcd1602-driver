@@ -113,7 +113,7 @@ where
     ControlPin: OutputPin,
     DBPin: OutputPin + InputPin,
 {
-    fn send(&mut self, command: impl Into<Command>) -> Option<u8> {
+    fn send(&mut self, command_set: impl Into<Command>) -> Option<u8> {
         assert!(
             PIN_CNT == 4 || PIN_CNT == 8,
             "Pins other than 4 or 8 are not supported"
@@ -121,7 +121,7 @@ where
 
         self.en_pin.set_low().ok().unwrap();
 
-        let command = command.into();
+        let command = command_set.into();
 
         match command.get_register_selection() {
             RegisterSelection::Command => {

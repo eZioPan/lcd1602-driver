@@ -157,6 +157,7 @@ impl<'a, 'b, Sender: SendCommand, Delayer: DelayNs> Lcd<'a, 'b, Sender, Delayer>
 
     pub fn set_line_mode(&mut self, line: LineMode) {
         self.state.set_line_mode(line);
+
         self.sender.wait_and_send(
             CommandSet::FunctionSet(DataWidth::Bit4, self.get_line_mode(), self.get_font()),
             self.delayer,
@@ -170,6 +171,7 @@ impl<'a, 'b, Sender: SendCommand, Delayer: DelayNs> Lcd<'a, 'b, Sender, Delayer>
 
     pub fn set_font(&mut self, font: Font) {
         self.state.set_font(font);
+
         self.sender.wait_and_send(
             CommandSet::FunctionSet(DataWidth::Bit4, self.get_line_mode(), self.get_font()),
             self.delayer,
@@ -181,6 +183,7 @@ impl<'a, 'b, Sender: SendCommand, Delayer: DelayNs> Lcd<'a, 'b, Sender, Delayer>
     }
     pub fn set_display_state(&mut self, display: State) {
         self.state.set_display_state(display);
+
         self.sender.wait_and_send(
             CommandSet::DisplayOnOff {
                 display: self.get_display_state(),
@@ -196,6 +199,7 @@ impl<'a, 'b, Sender: SendCommand, Delayer: DelayNs> Lcd<'a, 'b, Sender, Delayer>
     }
     pub fn set_cursor_state(&mut self, cursor: State) {
         self.state.set_cursor_state(cursor);
+
         self.sender.wait_and_send(
             CommandSet::DisplayOnOff {
                 display: self.get_display_state(),
@@ -214,6 +218,7 @@ impl<'a, 'b, Sender: SendCommand, Delayer: DelayNs> Lcd<'a, 'b, Sender, Delayer>
     }
     pub fn set_cursor_blink_state(&mut self, blink: State) {
         self.state.set_cursor_blink(blink);
+
         self.sender.wait_and_send(
             CommandSet::DisplayOnOff {
                 display: self.get_display_state(),
@@ -229,6 +234,7 @@ impl<'a, 'b, Sender: SendCommand, Delayer: DelayNs> Lcd<'a, 'b, Sender, Delayer>
     }
     pub fn set_direction(&mut self, dir: MoveDirection) {
         self.state.set_direction(dir);
+
         self.sender.wait_and_send(
             CommandSet::EntryModeSet(self.get_direction(), self.get_shift_type()),
             self.delayer,
@@ -240,6 +246,7 @@ impl<'a, 'b, Sender: SendCommand, Delayer: DelayNs> Lcd<'a, 'b, Sender, Delayer>
     }
     pub fn set_shift_type(&mut self, shift: ShiftType) {
         self.state.set_shift(shift);
+
         self.sender.wait_and_send(
             CommandSet::EntryModeSet(self.get_direction(), self.get_shift_type()),
             self.delayer,
@@ -279,6 +286,7 @@ impl<'a, 'b, Sender: SendCommand, Delayer: DelayNs> Lcd<'a, 'b, Sender, Delayer>
     }
     pub fn shift_cursor_or_display(&mut self, shift_type: ShiftType, dir: MoveDirection) {
         self.state.shift_cursor_or_display(shift_type, dir);
+
         self.sender.wait_and_send(
             CommandSet::CursorOrDisplayShift(shift_type, dir),
             self.delayer,
@@ -288,12 +296,15 @@ impl<'a, 'b, Sender: SendCommand, Delayer: DelayNs> Lcd<'a, 'b, Sender, Delayer>
     pub fn get_display_offset(&self) -> u8 {
         self.state.get_display_offset()
     }
-    pub fn set_wait_interval_us(&mut self, interval: u32) {
-        self.poll_interval_us = interval;
+
+    pub fn set_poll_interval(&mut self, interval_us: u32) {
+        self.poll_interval_us = interval_us;
     }
-    pub fn get_wait_interval_us(&self) -> u32 {
+
+    pub fn get_poll_interval_us(&self) -> u32 {
         self.poll_interval_us
     }
+
     pub fn get_line_capacity(&self) -> u8 {
         self.state.get_line_capacity()
     }
@@ -335,6 +346,7 @@ impl<'a, 'b, Sender: SendCommand, Delayer: DelayNs> Lcd<'a, 'b, Sender, Delayer>
     /// write a byte to specific position
     pub fn write_byte_to_pos(&mut self, byte: impl Into<u8>, pos: (u8, u8)) {
         self.set_cursor_pos(pos);
+
         self.sender.wait_and_send(
             CommandSet::WriteDataToRAM(byte.into()),
             self.delayer,
@@ -362,11 +374,13 @@ impl<'a, 'b, Sender: SendCommand, Delayer: DelayNs> Lcd<'a, 'b, Sender, Delayer>
         self.set_cursor_pos(pos);
         self.write_str_to_cur(str);
     }
+
     /// write custom graph to specific position
     pub fn write_graph_to_pos(&mut self, index: u8, pos: (u8, u8)) {
         assert!(index < 8, "Only 8 graphs allowed in CGRAM");
         self.write_byte_to_pos(index, pos);
     }
+
     // read custom graph data from CGRAM
     pub fn read_graph_from_cgram(&mut self, index: u8) -> [u8; 8] {
         assert!(index < 8, "index too big, should less than 8");

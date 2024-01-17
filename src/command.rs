@@ -1,6 +1,6 @@
 use embedded_hal::delay::DelayNs;
 
-use crate::utils::{BitOps, BitState};
+use crate::utils::BitOps;
 
 #[derive(Clone, Copy)]
 pub enum CommandSet {
@@ -83,7 +83,7 @@ pub struct Command {
     data: Option<Bits>, // if it's a read command, then data should be filled by reading process
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub(super) enum RegisterSelection {
     Command,
     Data,
@@ -95,7 +95,7 @@ pub(super) enum ReadWriteOp {
     Read,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub(super) enum Bits {
     Bit4(u8),
     Bit8(u8),
@@ -123,12 +123,16 @@ pub trait SendCommand {
         self.wait_for_idle(delayer, poll_interval_us);
         self.send(command)
     }
+
     fn wait_for_idle(&mut self, delayer: &mut impl DelayNs, poll_interval_us: u32) {
         while self.check_busy() {
             delayer.delay_us(poll_interval_us);
         }
     }
+
     fn check_busy(&mut self) -> bool {
+        use crate::utils::BitState;
+
         let busy_state = self.send(CommandSet::ReadBusyFlagAndAddress).unwrap();
         matches!(busy_state.check_bit(7), BitState::Set)
     }

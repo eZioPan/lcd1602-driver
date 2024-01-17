@@ -1,5 +1,6 @@
 //! common tools
 
+#[derive(PartialEq)]
 pub enum BitState {
     Clear,
     Set,
