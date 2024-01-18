@@ -32,6 +32,17 @@ impl<'a, 'b, Sender: SendCommand, Delayer: DelayNs> Lcd<'a, 'b, Sender, Delayer>
 }
 
 impl<'a, 'b, Sender: SendCommand, Delayer: DelayNs> Lcd<'a, 'b, Sender, Delayer> {
+    /// Note:
+    /// Due to driver implementation, this function may have actual effect, or not
+    pub fn set_backlight(&mut self, backlight: State) {
+        self.sender.set_backlight(backlight);
+        self.state.set_backlight(backlight);
+    }
+
+    pub fn get_backlight(self) -> State {
+        self.state.get_backlight()
+    }
+
     pub fn read_u8_from_cur(&mut self) -> u8 {
         self.sender
             .wait_and_send(

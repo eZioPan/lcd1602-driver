@@ -13,9 +13,18 @@ pub struct LcdState {
     cursor_pos: (u8, u8),
     display_offset: u8,
     ram_type: RAMType,
+    backlight: State,
 }
 
 impl LcdState {
+    pub fn get_backlight(&self) -> State {
+        self.backlight
+    }
+
+    pub fn set_backlight(&mut self, backlight: State) {
+        self.backlight = backlight;
+    }
+
     pub fn get_data_width(&self) -> DataWidth {
         self.data_width
     }

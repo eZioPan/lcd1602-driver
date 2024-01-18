@@ -143,6 +143,14 @@ fn main() -> ! {
     lcd.delay_ms(1_000);
     lcd.full_display_blink(3, 500_000);
 
+    // and blinking backlight 3 times
+    for _ in 0..3 {
+        lcd.delay_ms(500);
+        lcd.set_backlight(State::Off);
+        lcd.delay_ms(500);
+        lcd.set_backlight(State::On);
+    }
+
     #[allow(clippy::empty_loop)]
     loop {}
 }

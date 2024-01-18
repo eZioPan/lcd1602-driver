@@ -1,22 +1,21 @@
 use embedded_hal::i2c::{AddressMode, I2c};
 
 use crate::{
-    command::{Bits, Command, ReadWriteOp, RegisterSelection, SendCommand},
-    utils::BitOps,
+    command::{Bits, Command, ReadWriteOp, RegisterSelection, SendCommand, State},
+    utils::{BitOps, BitState},
 };
 
 // I2C to parallel:
 // P7 -> P0
 // DB7/DB6/DB5/DB4/BL/CS/RW/RS
 
-pub struct I2cSender<'a, I2cLcd: I2c<A>, A: AddressMode + Clone + Copy> {
+pub struct I2cSender<'a, I2cLcd: I2c<A>, A: AddressMode + Clone> {
     i2c: &'a mut I2cLcd,
     addr: A,
     first_command: bool,
-    // TODO: make backlight turn on/off
 }
 
-impl<'a, I2cLcd: I2c<A>, A: AddressMode + Clone + Copy> I2cSender<'a, I2cLcd, A> {
+impl<'a, I2cLcd: I2c<A>, A: AddressMode + Clone> I2cSender<'a, I2cLcd, A> {
     pub fn new(i2c: &'a mut I2cLcd, addr: A) -> Self {
         Self {
             i2c,
@@ -26,7 +25,32 @@ impl<'a, I2cLcd: I2c<A>, A: AddressMode + Clone + Copy> I2cSender<'a, I2cLcd, A>
     }
 }
 
-impl<'a, I2cLcd: I2c<A>, A: AddressMode + Clone + Copy> SendCommand for I2cSender<'a, I2cLcd, A> {
+impl<'a, I2cLcd: I2c<A>, A: AddressMode + Clone> SendCommand for I2cSender<'a, I2cLcd, A> {
+    fn set_backlight(&mut self, state: State) {
+        let mut disabled_command: u8 = 0b1111_0010;
+
+        if state == State::On {
+            disabled_command.set_bit(3);
+        }
+
+        let mut enabled_command = disabled_command;
+        enabled_command.set_bit(2);
+
+        let seq = [disabled_command, enabled_command, disabled_command];
+
+        self.i2c.write(self.addr.clone(), &seq).unwrap();
+    }
+
+    fn get_backlight(&mut self) -> State {
+        let mut buf = [0u8];
+        // just a read is sufficient get backlight state
+        self.i2c.read(self.addr.clone(), &mut buf).unwrap();
+        match buf[0].check_bit(3) {
+            BitState::Clear => State::Off,
+            BitState::Set => State::On,
+        }
+    }
+
     fn send(&mut self, command_set: impl Into<Command>) -> Option<u8> {
         let command: Command = command_set.into();
 
@@ -51,7 +75,7 @@ impl<'a, I2cLcd: I2c<A>, A: AddressMode + Clone + Copy> SendCommand for I2cSende
 
                     let I2cSeq(_, seq) = i2c_data.into();
 
-                    self.i2c.write(self.addr, &seq[0..3]).unwrap();
+                    self.i2c.write(self.addr.clone(), &seq[0..3]).unwrap();
                 }
             }
 
@@ -83,7 +107,7 @@ impl<'a, I2cLcd: I2c<A>, A: AddressMode + Clone + Copy> SendCommand for I2cSende
 
                     let i2c_data = I2cRawData::from(command);
                     let I2cSeq(_, seq) = i2c_data.into();
-                    self.i2c.write(self.addr, &seq).unwrap();
+                    self.i2c.write(self.addr.clone(), &seq).unwrap();
                 }
 
                 ReadWriteOp::Read => {
@@ -93,19 +117,17 @@ impl<'a, I2cLcd: I2c<A>, A: AddressMode + Clone + Copy> SendCommand for I2cSende
                     let i2c_data = I2cRawData::from(command);
                     let I2cSeq(_, seq) = i2c_data.into();
 
-                    self.i2c.write(self.addr, &seq[0..2]).unwrap();
-                    self.i2c.read(self.addr, &mut buf).unwrap();
-                    self.i2c.write(self.addr, &seq[2..3]).unwrap();
+                    self.i2c
+                        .write_read(self.addr.clone(), &seq[0..2], &mut buf)
+                        .unwrap();
                     concat_buf[0] = buf[0];
-
-                    self.i2c.write(self.addr, &seq[3..5]).unwrap();
-                    self.i2c.read(self.addr, &mut buf).unwrap();
-                    self.i2c.write(self.addr, &seq[5..6]).unwrap();
+                    self.i2c
+                        .write_read(self.addr.clone(), &seq[2..5], &mut buf)
+                        .unwrap();
+                    self.i2c.write(self.addr.clone(), &seq[5..6]).unwrap();
                     concat_buf[1] = buf[0];
 
-                    let output = (concat_buf[0] & 0b1111_0000) | (concat_buf[1] >> 4);
-
-                    return Some(output);
+                    return Some((concat_buf[0] & 0b1111_0000) | (concat_buf[1] >> 4));
                 }
             };
         }

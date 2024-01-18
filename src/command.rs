@@ -102,6 +102,14 @@ pub(super) enum Bits {
 }
 
 pub trait SendCommand {
+    /// Note:
+    /// If a driver doesn't implement this command, just silently bypass it
+    fn get_backlight(&mut self) -> State;
+
+    /// Note:
+    /// If a driver doesn't implement this command, just silently bypass it
+    fn set_backlight(&mut self, backlight: State);
+
     fn send(&mut self, command: impl Into<Command>) -> Option<u8>;
 
     fn delay_and_send(

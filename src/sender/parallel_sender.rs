@@ -1,26 +1,30 @@
-use embedded_hal::digital::{InputPin, OutputPin};
+use embedded_hal::digital::{InputPin, OutputPin, StatefulOutputPin};
 
 use crate::{
-    command::{Bits, Command, ReadWriteOp, RegisterSelection, SendCommand},
+    command::{Bits, Command, ReadWriteOp, RegisterSelection, SendCommand, State},
     utils::{BitOps, BitState},
 };
 
-pub struct ParallelSender<ControlPin, DBPin, const PIN_CNT: usize>
+pub struct ParallelSender<ControlPin, DBPin, BLPin, const PIN_CNT: usize>
 where
     ControlPin: OutputPin,
     DBPin: OutputPin + InputPin,
+    BLPin: StatefulOutputPin,
 {
     rs_pin: ControlPin,
     rw_pin: ControlPin,
     en_pin: ControlPin,
     db_pins: [DBPin; PIN_CNT],
+    bl_pin: Option<BLPin>,
 }
 
-impl<ControlPin, DBPin> ParallelSender<ControlPin, DBPin, 4>
+impl<ControlPin, DBPin, BLPin> ParallelSender<ControlPin, DBPin, BLPin, 4>
 where
     ControlPin: OutputPin,
     DBPin: OutputPin + InputPin,
+    BLPin: StatefulOutputPin,
 {
+    #[allow(clippy::too_many_arguments)]
     pub fn new_4pin(
         rs: ControlPin,
         rw: ControlPin,
@@ -29,20 +33,23 @@ where
         db5: DBPin,
         db6: DBPin,
         db7: DBPin,
+        bl: Option<BLPin>,
     ) -> Self {
         Self {
             rs_pin: rs,
             rw_pin: rw,
             en_pin: en,
             db_pins: [db4, db5, db6, db7],
+            bl_pin: bl,
         }
     }
 }
 
-impl<ControlPin, DBPin> ParallelSender<ControlPin, DBPin, 8>
+impl<ControlPin, DBPin, BLPin> ParallelSender<ControlPin, DBPin, BLPin, 8>
 where
     ControlPin: OutputPin,
     DBPin: OutputPin + InputPin,
+    BLPin: StatefulOutputPin,
 {
     #[allow(clippy::too_many_arguments)]
     pub fn new_8pin(
@@ -57,20 +64,24 @@ where
         db5: DBPin,
         db6: DBPin,
         db7: DBPin,
+        bl: Option<BLPin>,
     ) -> Self {
         Self {
             rs_pin: rs,
             rw_pin: rw,
             en_pin: en,
             db_pins: [db0, db1, db2, db3, db4, db5, db6, db7],
+            bl_pin: bl,
         }
     }
 }
 
-impl<ControlPin, DBPin, const PIN_CNT: usize> ParallelSender<ControlPin, DBPin, PIN_CNT>
+impl<ControlPin, DBPin, BLPin, const PIN_CNT: usize>
+    ParallelSender<ControlPin, DBPin, BLPin, PIN_CNT>
 where
     ControlPin: OutputPin,
     DBPin: OutputPin + InputPin,
+    BLPin: StatefulOutputPin,
 {
     fn push_bits(&mut self, raw_bits: u8) {
         self.db_pins
@@ -107,12 +118,32 @@ where
     }
 }
 
-impl<ControlPin, DBPin, const PIN_CNT: usize> SendCommand
-    for ParallelSender<ControlPin, DBPin, PIN_CNT>
+impl<ControlPin, DBPin, BLPin, const PIN_CNT: usize> SendCommand
+    for ParallelSender<ControlPin, DBPin, BLPin, PIN_CNT>
 where
     ControlPin: OutputPin,
     DBPin: OutputPin + InputPin,
+    BLPin: StatefulOutputPin,
 {
+    fn get_backlight(&mut self) -> State {
+        match self.bl_pin.as_mut() {
+            Some(bl_pin) => match bl_pin.is_set_high().unwrap() {
+                true => State::On,
+                false => State::Off,
+            },
+            None => Default::default(),
+        }
+    }
+
+    fn set_backlight(&mut self, backlight: State) {
+        if let Some(bl_pin) = self.bl_pin.as_mut() {
+            match backlight {
+                State::Off => bl_pin.set_low().unwrap(),
+                State::On => bl_pin.set_high().unwrap(),
+            }
+        }
+    }
+
     fn send(&mut self, command_set: impl Into<Command>) -> Option<u8> {
         assert!(
             PIN_CNT == 4 || PIN_CNT == 8,
