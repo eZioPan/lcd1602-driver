@@ -16,7 +16,9 @@
 //!      D6 <-> PA5
 //!      D7 <-> PA6
 //!       A <-> 5V
-//!       K <-> GND
+//!       K <-> external NPN transistor collector
+//!     external NPN transistor base <-> PA7
+//!     external NPN transistor emitter <-> GND
 
 #![no_std]
 #![no_main]
@@ -81,9 +83,19 @@ fn main() -> ! {
         .internal_pull_up(true)
         .erase();
 
+    let bl_pin = gpioa.pa7.into_push_pull_output().erase();
+
     // put pins together
-    let mut sender =
-        ParallelSender::new_4pin(rs_pin, rw_pin, en_pin, db4_pin, db5_pin, db6_pin, db7_pin);
+    let mut sender = ParallelSender::new_4pin(
+        rs_pin,
+        rw_pin,
+        en_pin,
+        db4_pin,
+        db5_pin,
+        db6_pin,
+        db7_pin,
+        Some(bl_pin),
+    );
 
     let mut lcd_state = LcdState::default();
     lcd_state.set_data_width(DataWidth::Bit4);
@@ -178,6 +190,14 @@ fn main() -> ! {
     // and blinking display 3 times
     lcd.delay_ms(1_000);
     lcd.full_display_blink(3, 500_000);
+
+    // and blinking backlight 3 times
+    for _ in 0..3 {
+        lcd.delay_ms(500);
+        lcd.set_backlight(State::Off);
+        lcd.delay_ms(500);
+        lcd.set_backlight(State::On);
+    }
 
     #[allow(clippy::empty_loop)]
     loop {}

@@ -102,6 +102,9 @@ impl<'a, 'b, Sender: SendCommand, Delayer: DelayNs> Builder<'a, 'b, Sender, Dela
             self.poll_interval_us,
         );
 
+        // set backlight after LCD init
+        sender.set_backlight(state.get_backlight());
+
         Lcd::new(sender, delayer, state, self.poll_interval_us)
     }
 }
