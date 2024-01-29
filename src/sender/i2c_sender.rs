@@ -1,14 +1,28 @@
-use embedded_hal::i2c::{AddressMode, I2c};
+/*!
+# I2C adapter board driver
+
+This adapter board has a I2C interface to MCU,
+and it's 8 bi-direcrtional pin P7 to P0 is attach to following pin of LCD1602
+
+P7 -> P0
+DB7/DB6/DB5/DB4/BL/CS/RW/RS
+
+Since there are only 4 pin for DB pin, so it only support 4 bit data width command
+*/
+
+use embedded_hal::{
+    delay::DelayNs,
+    i2c::{AddressMode, I2c},
+};
 
 use crate::{
-    command::{Bits, Command, ReadWriteOp, RegisterSelection, SendCommand, State},
+    command::{Bits, Command, ReadWriteOp, RegisterSelection, State},
     utils::{BitOps, BitState},
 };
 
-// I2C to parallel:
-// P7 -> P0
-// DB7/DB6/DB5/DB4/BL/CS/RW/RS
+use super::SendCommand;
 
+/// [`I2cSender`] is the I2C interface with an adapter board to drive LCD1602
 pub struct I2cSender<'a, I2cLcd: I2c<A>, A: AddressMode + Clone> {
     i2c: &'a mut I2cLcd,
     addr: A,
@@ -16,6 +30,7 @@ pub struct I2cSender<'a, I2cLcd: I2c<A>, A: AddressMode + Clone> {
 }
 
 impl<'a, I2cLcd: I2c<A>, A: AddressMode + Clone> I2cSender<'a, I2cLcd, A> {
+    /// Create a [`I2cSender`] driver
     pub fn new(i2c: &'a mut I2cLcd, addr: A) -> Self {
         Self {
             i2c,
@@ -25,7 +40,12 @@ impl<'a, I2cLcd: I2c<A>, A: AddressMode + Clone> I2cSender<'a, I2cLcd, A> {
     }
 }
 
-impl<'a, I2cLcd: I2c<A>, A: AddressMode + Clone> SendCommand for I2cSender<'a, I2cLcd, A> {
+impl<'a, I2cLcd, A, Delayer> SendCommand<Delayer> for I2cSender<'a, I2cLcd, A>
+where
+    I2cLcd: I2c<A>,
+    A: AddressMode + Clone,
+    Delayer: DelayNs,
+{
     fn set_backlight(&mut self, state: State) {
         let mut disabled_command: u8 = 0b1111_0010;
 
@@ -51,9 +71,7 @@ impl<'a, I2cLcd: I2c<A>, A: AddressMode + Clone> SendCommand for I2cSender<'a, I
         }
     }
 
-    fn send(&mut self, command_set: impl Into<Command>) -> Option<u8> {
-        let command: Command = command_set.into();
-
+    fn send(&mut self, command: Command) -> Option<u8> {
         if self.first_command {
             assert!(
                 command.get_data().is_some(),
@@ -142,7 +160,6 @@ struct I2cRawData(Option<u8>, Option<u8>);
 impl From<Command> for I2cRawData {
     fn from(command: Command) -> Self {
         // always "disable" data
-        // TODO: make backlight turn on/off
         let mut data = [Some(0b0000_1000u8), Some(0b0000_1000u8)];
 
         data.iter_mut().for_each(|v| {

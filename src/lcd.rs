@@ -1,330 +1,109 @@
+//! [`Lcd`] is the main driver for LCD1602
+
 use embedded_hal::delay::DelayNs;
 
 use crate::{
-    command::{
-        CommandSet, DataWidth, Font, LineMode, MoveDirection, RAMType, SendCommand, ShiftType,
-        State,
-    },
+    command::{Font, LineMode, MoveDirection, RAMType, ShiftType, State},
     state::LcdState,
 };
 
-pub struct Lcd<'a, 'b, Sender: SendCommand, Delayer: DelayNs> {
+mod init;
+
+pub use init::Config;
+
+mod impls;
+
+/// [`Lcd`] is the main struct to drive a LCD1602
+pub struct Lcd<'a, 'b, Sender, Delayer>
+where
+    Delayer: DelayNs,
+{
     sender: &'a mut Sender,
     delayer: &'b mut Delayer,
     state: LcdState,
     poll_interval_us: u32,
 }
 
-impl<'a, 'b, Sender: SendCommand, Delayer: DelayNs> Lcd<'a, 'b, Sender, Delayer> {
-    pub(crate) fn new(
-        sender: &'a mut Sender,
-        delayer: &'b mut Delayer,
-        state: LcdState,
-        poll_interval_us: u32,
-    ) -> Self {
-        Self {
-            sender,
-            delayer,
-            state,
-            poll_interval_us,
-        }
-    }
-}
+/// All basic command to control LCD1602
+#[allow(missing_docs)]
+pub trait Basic {
+    fn read_u8_from_cur(&mut self) -> u8;
 
-impl<'a, 'b, Sender: SendCommand, Delayer: DelayNs> Lcd<'a, 'b, Sender, Delayer> {
+    fn write_u8_to_cur(&mut self, byte: u8);
+
+    fn write_graph_to_cgram(&mut self, index: u8, graph_data: &[u8; 8]);
+
+    fn write_graph_to_cur(&mut self, index: u8);
+
+    fn clean_display(&mut self);
+
+    fn return_home(&mut self);
+
+    fn set_line_mode(&mut self, line: LineMode);
+
+    fn get_line_mode(&self) -> LineMode;
+
+    fn set_font(&mut self, font: Font);
+
+    fn get_font(&self) -> Font;
+
+    fn set_display_state(&mut self, display: State);
+
+    fn get_display_state(&self) -> State;
+
+    fn set_cursor_state(&mut self, cursor: State);
+
+    fn get_cursor_state(&self) -> State;
+
+    fn get_ram_type(&self) -> RAMType;
+
+    fn set_cursor_blink_state(&mut self, blink: State);
+
+    fn get_cursor_blink_state(&self) -> State;
+
+    fn set_direction(&mut self, dir: MoveDirection);
+
+    fn get_direction(&self) -> MoveDirection;
+
+    fn set_shift_type(&mut self, shift: ShiftType);
+
+    fn get_shift_type(&self) -> ShiftType;
+
+    fn set_cursor_pos(&mut self, pos: (u8, u8));
+
+    fn set_cgram_addr(&mut self, addr: u8);
+
+    fn get_cursor_pos(&self) -> (u8, u8);
+
+    fn shift_cursor_or_display(&mut self, shift_type: ShiftType, dir: MoveDirection);
+
+    fn get_display_offset(&self) -> u8;
+
+    fn set_poll_interval(&mut self, interval_us: u32);
+
+    fn get_poll_interval_us(&self) -> u32;
+
+    fn get_line_capacity(&self) -> u8;
+
     /// Note:
     /// Due to driver implementation, this function may have actual effect, or not
-    pub fn set_backlight(&mut self, backlight: State) {
-        self.sender.set_backlight(backlight);
-        self.state.set_backlight(backlight);
-    }
+    fn set_backlight(&mut self, backlight: State);
 
-    pub fn get_backlight(self) -> State {
-        self.state.get_backlight()
-    }
+    fn get_backlight(self) -> State;
 
-    pub fn read_u8_from_cur(&mut self) -> u8 {
-        self.sender
-            .wait_and_send(
-                CommandSet::ReadDataFromRAM,
-                self.delayer,
-                self.poll_interval_us,
-            )
-            .unwrap()
-    }
+    fn calculate_pos_by_offset(&self, start: (u8, u8), offset: (i8, i8)) -> (u8, u8);
 
-    pub fn write_u8_to_cur(&mut self, byte: impl Into<u8>) {
-        assert!(
-            self.get_ram_type() == RAMType::DDRam,
-            "Current in CGRAM, use .set_cursor_pos() to change to DDRAM"
-        );
+    /// Wait for specified milliseconds
+    fn delay_ms(&mut self, ms: u32);
 
-        self.sender.wait_and_send(
-            CommandSet::WriteDataToRAM(byte.into()),
-            self.delayer,
-            self.poll_interval_us,
-        );
-
-        // since AC of UT7066U will automaticlly increase, we only need to update LCD struct
-        // since RAM of UT7066U is looped, we need to mimic it
-        let last_pos = self.get_cursor_pos();
-        let line_capacity = self.get_line_capacity();
-
-        let raw_pos = match self.get_direction() {
-            MoveDirection::RightToLeft => match self.get_line_mode() {
-                LineMode::OneLine => {
-                    if last_pos.0 == 0 {
-                        (line_capacity - 1, 0)
-                    } else {
-                        (last_pos.0 - 1, 0)
-                    }
-                }
-                LineMode::TwoLine => {
-                    if last_pos.0 == 0 {
-                        if last_pos.1 == 1 {
-                            (line_capacity - 1, 0)
-                        } else {
-                            (line_capacity - 1, 1)
-                        }
-                    } else {
-                        (last_pos.0 - 1, last_pos.1)
-                    }
-                }
-            },
-            MoveDirection::LeftToRight => match self.get_line_mode() {
-                LineMode::OneLine => {
-                    if last_pos.0 == line_capacity - 1 {
-                        (0, 0)
-                    } else {
-                        (last_pos.0 + 1, 0)
-                    }
-                }
-                LineMode::TwoLine => {
-                    if last_pos.0 == line_capacity - 1 {
-                        if last_pos.1 == 0 {
-                            (0, 1)
-                        } else {
-                            (0, 0)
-                        }
-                    } else {
-                        (last_pos.0 + 1, last_pos.1)
-                    }
-                }
-            },
-        };
-        self.set_cursor_pos(raw_pos);
-    }
-
-    pub fn write_graph_to_cgram(&mut self, index: u8, graph_data: &[u8; 8]) {
-        assert!(index < 8, "Only 8 graphs allowed in CGRAM");
-
-        assert!(
-            graph_data.iter().all(|&line| line < 2u8.pow(5)),
-            "Only lower 5 bits use to construct display"
-        );
-
-        // if DDRAM is write from right to left, then when we change to CGRAM, graph will write from lower to upper
-        // we will change it to left to right, to make writing correct
-        let mut direction_fliped = false;
-        if self.get_direction() == MoveDirection::RightToLeft {
-            self.set_direction(MoveDirection::LeftToRight);
-            direction_fliped = true;
-        }
-
-        let cgram_data_addr_start = index.checked_shl(3).unwrap();
-
-        self.set_cgram_addr(cgram_data_addr_start);
-        graph_data.iter().for_each(|&line_data| {
-            self.sender.wait_and_send(
-                CommandSet::WriteDataToRAM(line_data),
-                self.delayer,
-                self.poll_interval_us,
-            );
-        });
-
-        // if writing direction is changed, then change it back
-        if direction_fliped {
-            self.set_direction(MoveDirection::RightToLeft)
-        }
-    }
-
-    pub fn write_graph_to_cur(&mut self, index: u8) {
-        assert!(index < 8, "Only 8 graphs allowed in CGRAM");
-        self.write_u8_to_cur(index);
-    }
-
-    pub fn clean_display(&mut self) {
-        self.sender.wait_and_send(
-            CommandSet::ClearDisplay,
-            self.delayer,
-            self.poll_interval_us,
-        );
-    }
-
-    pub fn return_home(&mut self) {
-        self.sender
-            .wait_and_send(CommandSet::ReturnHome, self.delayer, self.poll_interval_us);
-    }
-
-    pub fn set_line_mode(&mut self, line: LineMode) {
-        self.state.set_line_mode(line);
-
-        self.sender.wait_and_send(
-            CommandSet::FunctionSet(DataWidth::Bit4, self.get_line_mode(), self.get_font()),
-            self.delayer,
-            self.poll_interval_us,
-        );
-    }
-
-    pub fn get_line_mode(&self) -> LineMode {
-        self.state.get_line_mode()
-    }
-
-    pub fn set_font(&mut self, font: Font) {
-        self.state.set_font(font);
-
-        self.sender.wait_and_send(
-            CommandSet::FunctionSet(DataWidth::Bit4, self.get_line_mode(), self.get_font()),
-            self.delayer,
-            self.poll_interval_us,
-        );
-    }
-    pub fn get_font(&self) -> Font {
-        self.state.get_font()
-    }
-    pub fn set_display_state(&mut self, display: State) {
-        self.state.set_display_state(display);
-
-        self.sender.wait_and_send(
-            CommandSet::DisplayOnOff {
-                display: self.get_display_state(),
-                cursor: self.get_cursor_state(),
-                cursor_blink: self.get_cursor_blink_state(),
-            },
-            self.delayer,
-            self.poll_interval_us,
-        );
-    }
-    pub fn get_display_state(&self) -> State {
-        self.state.get_display_state()
-    }
-    pub fn set_cursor_state(&mut self, cursor: State) {
-        self.state.set_cursor_state(cursor);
-
-        self.sender.wait_and_send(
-            CommandSet::DisplayOnOff {
-                display: self.get_display_state(),
-                cursor: self.get_cursor_state(),
-                cursor_blink: self.get_cursor_blink_state(),
-            },
-            self.delayer,
-            self.poll_interval_us,
-        );
-    }
-    pub fn get_cursor_state(&self) -> State {
-        self.state.get_cursor_state()
-    }
-    pub fn get_ram_type(&self) -> RAMType {
-        self.state.get_ram_type()
-    }
-    pub fn set_cursor_blink_state(&mut self, blink: State) {
-        self.state.set_cursor_blink(blink);
-
-        self.sender.wait_and_send(
-            CommandSet::DisplayOnOff {
-                display: self.get_display_state(),
-                cursor: self.get_cursor_state(),
-                cursor_blink: self.get_cursor_blink_state(),
-            },
-            self.delayer,
-            self.poll_interval_us,
-        );
-    }
-    pub fn get_cursor_blink_state(&self) -> State {
-        self.state.get_cursor_blink()
-    }
-    pub fn set_direction(&mut self, dir: MoveDirection) {
-        self.state.set_direction(dir);
-
-        self.sender.wait_and_send(
-            CommandSet::EntryModeSet(self.get_direction(), self.get_shift_type()),
-            self.delayer,
-            self.poll_interval_us,
-        );
-    }
-    pub fn get_direction(&self) -> MoveDirection {
-        self.state.get_direction()
-    }
-    pub fn set_shift_type(&mut self, shift: ShiftType) {
-        self.state.set_shift(shift);
-
-        self.sender.wait_and_send(
-            CommandSet::EntryModeSet(self.get_direction(), self.get_shift_type()),
-            self.delayer,
-            self.poll_interval_us,
-        );
-    }
-    pub fn get_shift_type(&self) -> ShiftType {
-        self.state.get_shift()
-    }
-    pub fn set_cursor_pos(&mut self, pos: (u8, u8)) {
-        self.state.set_ram_type(RAMType::DDRam);
-        self.state.set_cursor_pos(pos);
-
-        // in one line mode, pos.1 will always keep at 0
-        // in two line mode, the second line start at 0x40
-        let raw_pos: u8 = pos.1 * 0x40 + pos.0;
-
-        self.sender.wait_and_send(
-            CommandSet::SetDDRAM(raw_pos),
-            self.delayer,
-            self.poll_interval_us,
-        );
-    }
-    pub fn set_cgram_addr(&mut self, addr: u8) {
-        assert!(addr < 2u8.pow(6), "CGRAM Address overflow");
-
-        self.state.set_ram_type(RAMType::CGRam);
-
-        self.sender.wait_and_send(
-            CommandSet::SetCGRAM(addr),
-            self.delayer,
-            self.poll_interval_us,
-        );
-    }
-    pub fn get_cursor_pos(&self) -> (u8, u8) {
-        self.state.get_cursor_pos()
-    }
-    pub fn shift_cursor_or_display(&mut self, shift_type: ShiftType, dir: MoveDirection) {
-        self.state.shift_cursor_or_display(shift_type, dir);
-
-        self.sender.wait_and_send(
-            CommandSet::CursorOrDisplayShift(shift_type, dir),
-            self.delayer,
-            self.poll_interval_us,
-        );
-    }
-    pub fn get_display_offset(&self) -> u8 {
-        self.state.get_display_offset()
-    }
-
-    pub fn set_poll_interval(&mut self, interval_us: u32) {
-        self.poll_interval_us = interval_us;
-    }
-
-    pub fn get_poll_interval_us(&self) -> u32 {
-        self.poll_interval_us
-    }
-
-    pub fn get_line_capacity(&self) -> u8 {
-        self.state.get_line_capacity()
-    }
+    /// Wait for specified microseconds
+    fn delay_us(&mut self, us: u32);
 }
 
-#[cfg(feature = "LcdExt")]
-impl<'a, 'b, Sender: SendCommand, Delayer: DelayNs> Lcd<'a, 'b, Sender, Delayer> {
+/// Useful command to control LCD1602
+pub trait Ext: Basic {
     /// toggle entire display on and off (it doesn't toggle backlight)
-    pub fn toggle_display(&mut self) {
+    fn toggle_display(&mut self) {
         match self.get_display_state() {
             State::Off => self.set_display_state(State::On),
             State::On => self.set_display_state(State::Off),
@@ -334,7 +113,7 @@ impl<'a, 'b, Sender: SendCommand, Delayer: DelayNs> Lcd<'a, 'b, Sender, Delayer>
     /// write [char] to current position
     /// In default implementation, character only support
     /// from ASCII 0x20 (white space) to ASCII 0x7D (`}`)
-    pub fn write_char_to_cur(&mut self, char: char) {
+    fn write_char_to_cur(&mut self, char: char) {
         assert!(
             self.get_ram_type() == RAMType::DDRam,
             "Current in CGRAM, use .set_cursor_pos() to change to DDRAM"
@@ -350,23 +129,19 @@ impl<'a, 'b, Sender: SendCommand, Delayer: DelayNs> Lcd<'a, 'b, Sender, Delayer>
     }
 
     /// write string to current position
-    pub fn write_str_to_cur(&mut self, str: &str) {
+    fn write_str_to_cur(&mut self, str: &str) {
         str.chars().for_each(|char| self.write_char_to_cur(char));
     }
 
     /// write a byte to specific position
-    pub fn write_byte_to_pos(&mut self, byte: impl Into<u8>, pos: (u8, u8)) {
+    fn write_byte_to_pos(&mut self, byte: u8, pos: (u8, u8)) {
         self.set_cursor_pos(pos);
 
-        self.sender.wait_and_send(
-            CommandSet::WriteDataToRAM(byte.into()),
-            self.delayer,
-            self.poll_interval_us,
-        );
+        self.write_u8_to_cur(byte);
     }
 
     /// read a byte from specific position
-    pub fn read_byte_from_pos(&mut self, pos: (u8, u8)) -> u8 {
+    fn read_byte_from_pos(&mut self, pos: (u8, u8)) -> u8 {
         let original_pos = self.get_cursor_pos();
         self.set_cursor_pos(pos);
         let data = self.read_u8_from_cur();
@@ -375,25 +150,25 @@ impl<'a, 'b, Sender: SendCommand, Delayer: DelayNs> Lcd<'a, 'b, Sender, Delayer>
     }
 
     /// write a char to specific position
-    pub fn write_char_to_pos(&mut self, char: char, pos: (u8, u8)) {
+    fn write_char_to_pos(&mut self, char: char, pos: (u8, u8)) {
         self.set_cursor_pos(pos);
         self.write_char_to_cur(char);
     }
 
     /// write string to specific position
-    pub fn write_str_to_pos(&mut self, str: &str, pos: (u8, u8)) {
+    fn write_str_to_pos(&mut self, str: &str, pos: (u8, u8)) {
         self.set_cursor_pos(pos);
         self.write_str_to_cur(str);
     }
 
     /// write custom graph to specific position
-    pub fn write_graph_to_pos(&mut self, index: u8, pos: (u8, u8)) {
+    fn write_graph_to_pos(&mut self, index: u8, pos: (u8, u8)) {
         assert!(index < 8, "Only 8 graphs allowed in CGRAM");
         self.write_byte_to_pos(index, pos);
     }
 
-    // read custom graph data from CGRAM
-    pub fn read_graph_from_cgram(&mut self, index: u8) -> [u8; 8] {
+    /// read custom graph data from CGRAM
+    fn read_graph_from_cgram(&mut self, index: u8) -> [u8; 8] {
         assert!(index < 8, "index too big, should less than 8");
 
         // convert index to cgram address
@@ -408,16 +183,12 @@ impl<'a, 'b, Sender: SendCommand, Delayer: DelayNs> Lcd<'a, 'b, Sender, Delayer>
         graph
     }
 
-    // change cursor position with relative offset
-    pub fn offset_cursor_pos(&mut self, offset: (i8, i8)) {
-        self.set_cursor_pos(
-            self.state
-                .calculate_pos_by_offset(self.state.get_cursor_pos(), offset),
-        );
+    /// change cursor position with relative offset
+    fn offset_cursor_pos(&mut self, offset: (i8, i8)) {
+        self.set_cursor_pos(self.calculate_pos_by_offset(self.get_cursor_pos(), offset));
     }
 }
 
-#[cfg(feature = "LcdAnim")]
 /// The style of the offset display window
 pub enum MoveStyle {
     /// Always move to left
@@ -430,7 +201,6 @@ pub enum MoveStyle {
     Shortest,
 }
 
-#[cfg(feature = "LcdAnim")]
 /// The flip style of split flap display
 pub enum FlipStyle {
     /// Flip first character to target character, then flip next one
@@ -439,15 +209,15 @@ pub enum FlipStyle {
     Simultaneous,
 }
 
-#[cfg(feature = "LcdAnim")]
-impl<'a, 'b, Sender: SendCommand, Delayer: DelayNs> Lcd<'a, 'b, Sender, Delayer> {
+/// Show animation on LCD1602
+pub trait Anim: Ext {
     /// Make the entire screen blink
     ///
     /// # Arguments
     ///
     /// * `count` - the number of times to blink the screen. If the value is `0`, the screen will blink endless.
     /// * `interval_us` - The interval (in microseconds) at which the screen state changes
-    pub fn full_display_blink(&mut self, count: u32, interval_us: u32) {
+    fn full_display_blink(&mut self, count: u32, interval_us: u32) {
         match count == 0 {
             true => loop {
                 self.delay_us(interval_us);
@@ -468,7 +238,7 @@ impl<'a, 'b, Sender: SendCommand, Delayer: DelayNs> Lcd<'a, 'b, Sender, Delayer>
     ///
     /// * `str` - string to display
     /// * `delay_us` - The interval (in microseconds) of each character show up
-    pub fn typewriter_write(&mut self, str: &str, delay_us: u32) {
+    fn typewriter_write(&mut self, str: &str, delay_us: u32) {
         str.chars().for_each(|char| {
             self.delay_us(delay_us);
             self.write_char_to_cur(char);
@@ -484,7 +254,7 @@ impl<'a, 'b, Sender: SendCommand, Delayer: DelayNs> Lcd<'a, 'b, Sender, Delayer>
     /// * `max_flip_cnt` - The maximum number of times to flip the display before reaching the target character
     /// * `per_flip_delay_us` - The delay (in microseconds) between each flip. It is recommended to set this value to at least `100_000`.
     /// * `per_char_flip_delay_us` - Used in [FlipStyle::Sequential] mode, this is the time (in microseconds) to wait between flipping each character
-    pub fn split_flap_write(
+    fn split_flap_write(
         &mut self,
         str: &str,
         fs: FlipStyle,
@@ -534,8 +304,6 @@ impl<'a, 'b, Sender: SendCommand, Delayer: DelayNs> Lcd<'a, 'b, Sender, Delayer>
                         self.delay_us(per_flip_delay_us);
                         self.write_byte_to_pos(byte, cur_pos);
                     });
-
-                    self.shift_cursor_or_display(ShiftType::CursorOnly, self.get_direction());
                 })
             }
             FlipStyle::Simultaneous => {
@@ -565,12 +333,12 @@ impl<'a, 'b, Sender: SendCommand, Delayer: DelayNs> Lcd<'a, 'b, Sender, Delayer>
                         .filter(|&(_, target_char)| cur_byte <= target_char as u8) // filter character that still need to flip
                         .for_each(|(index, _)| {
                             let cur_pos = match self.get_direction() {
-                                MoveDirection::RightToLeft => self
-                                    .state
-                                    .calculate_pos_by_offset(start_pos, (-(index as i8), 0)),
-                                MoveDirection::LeftToRight => self
-                                    .state
-                                    .calculate_pos_by_offset(start_pos, (index as i8, 0)),
+                                MoveDirection::RightToLeft => {
+                                    self.calculate_pos_by_offset(start_pos, (-(index as i8), 0))
+                                }
+                                MoveDirection::LeftToRight => {
+                                    self.calculate_pos_by_offset(start_pos, (index as i8, 0))
+                                }
                             };
                             self.write_byte_to_pos(cur_byte, cur_pos);
                         });
@@ -579,12 +347,12 @@ impl<'a, 'b, Sender: SendCommand, Delayer: DelayNs> Lcd<'a, 'b, Sender, Delayer>
                 // after the flip finished, we cannot ensure cursor position (since .filter() method)
                 // move cursor to string end
                 let end_pos = match self.get_direction() {
-                    MoveDirection::RightToLeft => self
-                        .state
-                        .calculate_pos_by_offset(start_pos, (-((str_len) as i8), 0)),
-                    MoveDirection::LeftToRight => self
-                        .state
-                        .calculate_pos_by_offset(start_pos, ((str_len as i8), 0)),
+                    MoveDirection::RightToLeft => {
+                        self.calculate_pos_by_offset(start_pos, (-((str_len) as i8), 0))
+                    }
+                    MoveDirection::LeftToRight => {
+                        self.calculate_pos_by_offset(start_pos, ((str_len as i8), 0))
+                    }
                 };
                 self.set_cursor_pos(end_pos);
             }
@@ -604,7 +372,7 @@ impl<'a, 'b, Sender: SendCommand, Delayer: DelayNs> Lcd<'a, 'b, Sender, Delayer>
     /// * `ms` - The style of movement, see [MoveStyle]
     /// * `display_state_when_shift` - Whether to turn off the screen during the move
     /// * `delay_us_per_step` - The delay (in microseconds) between each step of the move
-    pub fn shift_display_to_pos(
+    fn shift_display_to_pos(
         &mut self,
         target_pos: u8,
         ms: MoveStyle,
@@ -687,15 +455,5 @@ impl<'a, 'b, Sender: SendCommand, Delayer: DelayNs> Lcd<'a, 'b, Sender, Delayer>
 
         // restore original display state
         self.set_display_state(before_state);
-    }
-
-    /// Wait for specified milliseconds
-    pub fn delay_ms(&mut self, ms: u32) {
-        self.delayer.delay_ms(ms);
-    }
-
-    /// Wait for specified microseconds
-    pub fn delay_us(&mut self, us: u32) {
-        self.delayer.delay_us(us)
     }
 }

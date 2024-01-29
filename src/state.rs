@@ -1,7 +1,7 @@
 use crate::command::{DataWidth, Font, LineMode, MoveDirection, RAMType, ShiftType, State};
 
 #[derive(Default)]
-pub struct LcdState {
+pub(crate) struct LcdState {
     data_width: DataWidth,
     line: LineMode,
     font: Font,
@@ -17,27 +17,27 @@ pub struct LcdState {
 }
 
 impl LcdState {
-    pub fn get_backlight(&self) -> State {
+    pub(crate) fn get_backlight(&self) -> State {
         self.backlight
     }
 
-    pub fn set_backlight(&mut self, backlight: State) {
+    pub(crate) fn set_backlight(&mut self, backlight: State) {
         self.backlight = backlight;
     }
 
-    pub fn get_data_width(&self) -> DataWidth {
+    pub(crate) fn get_data_width(&self) -> DataWidth {
         self.data_width
     }
 
-    pub fn set_data_width(&mut self, data_width: DataWidth) {
-        self.data_width = data_width
+    pub(crate) fn set_data_width(&mut self, data_width: DataWidth) {
+        self.data_width = data_width;
     }
 
-    pub fn get_line_mode(&self) -> LineMode {
+    pub(crate) fn get_line_mode(&self) -> LineMode {
         self.line
     }
 
-    pub fn set_line_mode(&mut self, line: LineMode) {
+    pub(crate) fn set_line_mode(&mut self, line: LineMode) {
         assert!(
             (self.get_font() == Font::Font5x11) && (line == LineMode::OneLine),
             "font is 5x11, line cannot be 2"
@@ -46,18 +46,18 @@ impl LcdState {
         self.line = line;
     }
 
-    pub fn get_line_capacity(&self) -> u8 {
+    pub(crate) fn get_line_capacity(&self) -> u8 {
         match self.get_line_mode() {
             LineMode::OneLine => 80,
             LineMode::TwoLine => 40,
         }
     }
 
-    pub fn get_font(&self) -> Font {
+    pub(crate) fn get_font(&self) -> Font {
         self.font
     }
 
-    pub fn set_font(&mut self, font: Font) {
+    pub(crate) fn set_font(&mut self, font: Font) {
         assert!(
             (self.get_line_mode() == LineMode::TwoLine) && (font == Font::Font5x8),
             "there is 2 line, font cannot be 5x11"
@@ -66,47 +66,47 @@ impl LcdState {
         self.font = font;
     }
 
-    pub fn get_display_state(&self) -> State {
+    pub(crate) fn get_display_state(&self) -> State {
         self.display_on
     }
 
-    pub fn set_display_state(&mut self, display: State) {
+    pub(crate) fn set_display_state(&mut self, display: State) {
         self.display_on = display;
     }
 
-    pub fn get_cursor_state(&self) -> State {
+    pub(crate) fn get_cursor_state(&self) -> State {
         self.cursor_on
     }
 
-    pub fn set_cursor_state(&mut self, cursor: State) {
+    pub(crate) fn set_cursor_state(&mut self, cursor: State) {
         self.cursor_on = cursor;
     }
 
-    pub fn get_cursor_blink(&self) -> State {
+    pub(crate) fn get_cursor_blink(&self) -> State {
         self.cursor_blink
     }
 
-    pub fn set_cursor_blink(&mut self, blink: State) {
+    pub(crate) fn set_cursor_blink(&mut self, blink: State) {
         self.cursor_blink = blink;
     }
 
-    pub fn get_direction(&self) -> MoveDirection {
+    pub(crate) fn get_direction(&self) -> MoveDirection {
         self.direction
     }
 
-    pub fn set_direction(&mut self, dir: MoveDirection) {
+    pub(crate) fn set_direction(&mut self, dir: MoveDirection) {
         self.direction = dir;
     }
 
-    pub fn get_shift(&self) -> ShiftType {
+    pub(crate) fn get_shift_type(&self) -> ShiftType {
         self.shift_type
     }
 
-    pub fn set_shift(&mut self, shift: ShiftType) {
+    pub(crate) fn set_shift_type(&mut self, shift: ShiftType) {
         self.shift_type = shift;
     }
 
-    pub fn get_cursor_pos(&self) -> (u8, u8) {
+    pub(crate) fn get_cursor_pos(&self) -> (u8, u8) {
         assert!(
             self.get_ram_type() == RAMType::DDRam,
             "Current in CGRAM, use .set_cursor_pos() to change to DDRAM"
@@ -115,7 +115,7 @@ impl LcdState {
         self.cursor_pos
     }
 
-    pub fn set_cursor_pos(&mut self, pos: (u8, u8)) {
+    pub(crate) fn set_cursor_pos(&mut self, pos: (u8, u8)) {
         let line_capacity = self.get_line_capacity();
         match self.line {
             LineMode::OneLine => {
@@ -131,11 +131,11 @@ impl LcdState {
         self.cursor_pos = pos;
     }
 
-    pub fn get_display_offset(&self) -> u8 {
+    pub(crate) fn get_display_offset(&self) -> u8 {
         self.display_offset
     }
 
-    pub fn set_display_offset(&mut self, offset: u8) {
+    pub(crate) fn set_display_offset(&mut self, offset: u8) {
         if offset >= self.get_line_capacity() {
             match self.get_line_mode() {
                 LineMode::OneLine => panic!("Display Offset too big, should not bigger than 79"),
@@ -146,7 +146,7 @@ impl LcdState {
         self.display_offset = offset;
     }
 
-    pub fn shift_cursor_or_display(&mut self, st: ShiftType, dir: MoveDirection) {
+    pub(crate) fn shift_cursor_or_display(&mut self, st: ShiftType, dir: MoveDirection) {
         let cur_display_offset = self.get_display_offset();
         let cur_cursor_pos = self.get_cursor_pos();
         let line_capacity = self.get_line_capacity();
@@ -207,21 +207,25 @@ impl LcdState {
                         self.set_display_offset(line_capacity - 1)
                     } else {
                         self.set_display_offset(cur_display_offset - 1)
-                    }
+                    };
                 }
             },
         }
     }
 
-    pub fn get_ram_type(&self) -> RAMType {
+    pub(crate) fn get_ram_type(&self) -> RAMType {
         self.ram_type
     }
 
-    pub fn set_ram_type(&mut self, ram_type: RAMType) {
+    pub(crate) fn set_ram_type(&mut self, ram_type: RAMType) {
         self.ram_type = ram_type;
     }
 
-    pub fn calculate_pos_by_offset(&self, original_pos: (u8, u8), offset: (i8, i8)) -> (u8, u8) {
+    pub(crate) fn calculate_pos_by_offset(
+        &self,
+        original_pos: (u8, u8),
+        offset: (i8, i8),
+    ) -> (u8, u8) {
         let line_capacity = self.get_line_capacity();
 
         match self.get_line_mode() {

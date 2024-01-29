@@ -10,11 +10,9 @@ use stm32f4xx_hal::{
 };
 
 use lcd1602_driver::{
-    builder::Builder,
     command::{DataWidth, MoveDirection, State},
-    lcd::{FlipStyle, MoveStyle},
-    sender::i2c_sender::I2cSender,
-    state::LcdState,
+    lcd::{self, Anim, Basic, Ext, FlipStyle, Lcd, MoveStyle},
+    sender::I2cSender,
     utils::BitOps,
 };
 
@@ -49,11 +47,10 @@ fn main() -> ! {
     // put pins together
     let mut sender = I2cSender::new(&mut i2c, 0x27);
 
-    let mut lcd_state = LcdState::default();
-    lcd_state.set_data_width(DataWidth::Bit4);
+    let lcd_config = lcd::Config::default().set_data_width(DataWidth::Bit4);
 
-    // init LCD1602
-    let mut lcd = Builder::new(&mut sender, &mut delayer, lcd_state, 10).init();
+    // create and init LCD1602
+    let mut lcd = Lcd::new(&mut sender, &mut delayer, lcd_config, 10);
 
     // draw a little heart in CGRAM
     lcd.write_graph_to_cgram(1, &HEART);

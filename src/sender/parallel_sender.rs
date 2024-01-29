@@ -1,10 +1,18 @@
-use embedded_hal::digital::{InputPin, OutputPin, StatefulOutputPin};
+//! 4-pin/8-pin parallel interface driver
+
+use embedded_hal::{
+    delay::DelayNs,
+    digital::{InputPin, OutputPin, StatefulOutputPin},
+};
 
 use crate::{
-    command::{Bits, Command, ReadWriteOp, RegisterSelection, SendCommand, State},
+    command::{Bits, Command, ReadWriteOp, RegisterSelection, State},
     utils::{BitOps, BitState},
 };
 
+use super::SendCommand;
+
+/// [`ParallelSender`] is the parallel interface to drive LCD1602
 pub struct ParallelSender<ControlPin, DBPin, BLPin, const PIN_CNT: usize>
 where
     ControlPin: OutputPin,
@@ -24,6 +32,8 @@ where
     DBPin: OutputPin + InputPin,
     BLPin: StatefulOutputPin,
 {
+    /// Create 4-pin parallel driver, will need other 3 pins to control LCD,  
+    /// and a optional pin to control backlight (better connect the pin to a transistor)
     #[allow(clippy::too_many_arguments)]
     pub fn new_4pin(
         rs: ControlPin,
@@ -51,6 +61,8 @@ where
     DBPin: OutputPin + InputPin,
     BLPin: StatefulOutputPin,
 {
+    /// Create 8-pin parallel driver, will need other 3 pins to control LCD,  
+    /// and a optional pin to control backlight (better connect the pin to a transistor)
     #[allow(clippy::too_many_arguments)]
     pub fn new_8pin(
         rs: ControlPin,
@@ -112,18 +124,19 @@ where
                         true => acc.clear_bit(index as u8),
                     },
                     Err(_) => panic!("Something wrong when read from pin"),
-                }
+                };
                 acc
             })
     }
 }
 
-impl<ControlPin, DBPin, BLPin, const PIN_CNT: usize> SendCommand
+impl<ControlPin, DBPin, BLPin, const PIN_CNT: usize, Delayer> SendCommand<Delayer>
     for ParallelSender<ControlPin, DBPin, BLPin, PIN_CNT>
 where
     ControlPin: OutputPin,
     DBPin: OutputPin + InputPin,
     BLPin: StatefulOutputPin,
+    Delayer: DelayNs,
 {
     fn get_backlight(&mut self) -> State {
         match self.bl_pin.as_mut() {
@@ -144,15 +157,13 @@ where
         }
     }
 
-    fn send(&mut self, command_set: impl Into<Command>) -> Option<u8> {
+    fn send(&mut self, command: Command) -> Option<u8> {
         assert!(
             PIN_CNT == 4 || PIN_CNT == 8,
             "Pins other than 4 or 8 are not supported"
         );
 
         self.en_pin.set_low().ok().unwrap();
-
-        let command = command_set.into();
 
         match command.get_register_selection() {
             RegisterSelection::Command => {

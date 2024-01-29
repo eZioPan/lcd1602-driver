@@ -28,11 +28,9 @@ use rtt_target::rtt_init_print;
 use stm32f4xx_hal::{pac, prelude::*};
 
 use lcd1602_driver::{
-    builder::Builder,
     command::{DataWidth, MoveDirection, State},
-    lcd::{FlipStyle, MoveStyle},
-    sender::parallel_sender::ParallelSender,
-    state::LcdState,
+    lcd::{self, Anim, Basic, Ext, FlipStyle, Lcd, MoveStyle},
+    sender::ParallelSender,
     utils::BitOps,
 };
 
@@ -97,11 +95,10 @@ fn main() -> ! {
         Some(bl_pin),
     );
 
-    let mut lcd_state = LcdState::default();
-    lcd_state.set_data_width(DataWidth::Bit4);
+    let lcd_config = lcd::Config::default().set_data_width(DataWidth::Bit4);
 
     // init LCD1602
-    let mut lcd = Builder::new(&mut sender, &mut delayer, lcd_state, 10).init();
+    let mut lcd = Lcd::new(&mut sender, &mut delayer, lcd_config, 10);
 
     // draw a little heart in CGRAM
     lcd.write_graph_to_cgram(1, &HEART);

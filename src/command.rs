@@ -1,9 +1,10 @@
-use embedded_hal::delay::DelayNs;
+//! Command to control LCD
 
 use crate::utils::BitOps;
 
+// It contain all commands from LCD1602 datasheet
 #[derive(Clone, Copy)]
-pub enum CommandSet {
+pub(crate) enum CommandSet {
     ClearDisplay,
     ReturnHome,
     EntryModeSet(MoveDirection, ShiftType),
@@ -13,8 +14,8 @@ pub enum CommandSet {
         cursor_blink: State,
     },
     CursorOrDisplayShift(ShiftType, MoveDirection),
-    // this is not a command from datasheet,
-    // it's the first (half) command of 4 pin mode
+    // This is not a command from datasheet.
+    // It's the first (half) command of 4 pin mode
     // we name it, to make things tidy
     HalfFunctionSet,
     FunctionSet(DataWidth, LineMode, Font),
@@ -25,49 +26,68 @@ pub enum CommandSet {
     ReadDataFromRAM,
 }
 
+/// [`MoveDirection`] defines the cursor and display window move direction
 #[derive(Clone, Copy, PartialEq, Default)]
 pub enum MoveDirection {
+    #[allow(missing_docs)]
     RightToLeft,
+    #[allow(missing_docs)]
     #[default]
     LeftToRight,
 }
 
+/// [`ShiftType`] defines the movement is cursor only or both cursor and display window
 #[derive(Clone, Copy, Default)]
 pub enum ShiftType {
+    #[allow(missing_docs)]
     #[default]
     CursorOnly,
+    #[allow(missing_docs)]
     CursorAndDisplay,
 }
 
+/// [`State`] defines a On/Off state
 #[derive(Clone, Copy, PartialEq, Default)]
 pub enum State {
+    #[allow(missing_docs)]
     Off,
+    #[allow(missing_docs)]
     #[default]
     On,
 }
 
+/// [`DataWidth`] defines data width of a [`Command`]  
+/// Should match current Sender's pin config
 #[derive(Clone, Copy, Default)]
 pub enum DataWidth {
+    #[allow(missing_docs)]
     #[default]
     Bit4,
+    #[allow(missing_docs)]
     Bit8,
 }
 
+/// [`LineMode`] is current LCD display line count
 #[derive(Clone, Copy, Default, PartialEq)]
 pub enum LineMode {
+    #[allow(missing_docs)]
     OneLine,
+    #[allow(missing_docs)]
     #[default]
     TwoLine,
 }
 
+/// [`Font`] is current display font
 #[derive(Clone, Copy, Default, PartialEq)]
 pub enum Font {
+    #[allow(missing_docs)]
     #[default]
     Font5x8,
+    #[allow(missing_docs)]
     Font5x11,
 }
 
-/// The type of memory to access
+/// [`RAMType`] is the type of memory to access
 #[derive(Clone, Copy, Default, PartialEq)]
 pub enum RAMType {
     /// Display Data RAM
@@ -77,73 +97,41 @@ pub enum RAMType {
     CGRam,
 }
 
+/// A sender should parse a [`Command`] and send the data to hardware to write/read data to/from hardware.
 pub struct Command {
     rs: RegisterSelection,
     rw: ReadWriteOp,
     data: Option<Bits>, // if it's a read command, then data should be filled by reading process
 }
 
+/// [`RegisterSelection`] defines LCD1602's register type that driver interact with.  
+/// A sender should change its "RS" pin state based on this variant.
 #[derive(Clone, Copy, PartialEq)]
-pub(super) enum RegisterSelection {
+pub enum RegisterSelection {
+    /// Access to Command register
     Command,
+    /// Access to Data register
     Data,
 }
 
+/// [`ReadWriteOp`] defines read/write operation that driver interact with.  
+/// A sender should change its "RW" pin state based on this variant.
 #[derive(Clone, Copy, PartialEq)]
-pub(super) enum ReadWriteOp {
+pub enum ReadWriteOp {
+    /// It's a write command
     Write,
+    /// It's a read command
     Read,
 }
 
+/// [`Bits`] defines *current command's* data width.  
+/// Most of the command should be 8 bit long, but **fisrt** command in [`DataWidth::Bit4`] mode is special, it requires 4 bit data.
 #[derive(Clone, Copy, PartialEq)]
-pub(super) enum Bits {
+pub enum Bits {
+    /// Current command has 4 bit long data
     Bit4(u8),
+    /// Current command has 8 bit long data
     Bit8(u8),
-}
-
-pub trait SendCommand {
-    /// Note:
-    /// If a driver doesn't implement this command, just silently bypass it
-    fn get_backlight(&mut self) -> State;
-
-    /// Note:
-    /// If a driver doesn't implement this command, just silently bypass it
-    fn set_backlight(&mut self, backlight: State);
-
-    fn send(&mut self, command: impl Into<Command>) -> Option<u8>;
-
-    fn delay_and_send(
-        &mut self,
-        command: impl Into<Command>,
-        delayer: &mut impl DelayNs,
-        delay_us: u32,
-    ) -> Option<u8> {
-        delayer.delay_us(delay_us);
-        self.send(command)
-    }
-
-    fn wait_and_send(
-        &mut self,
-        command: impl Into<Command>,
-        delayer: &mut impl DelayNs,
-        poll_interval_us: u32,
-    ) -> Option<u8> {
-        self.wait_for_idle(delayer, poll_interval_us);
-        self.send(command)
-    }
-
-    fn wait_for_idle(&mut self, delayer: &mut impl DelayNs, poll_interval_us: u32) {
-        while self.check_busy() {
-            delayer.delay_us(poll_interval_us);
-        }
-    }
-
-    fn check_busy(&mut self) -> bool {
-        use crate::utils::BitState;
-
-        let busy_state = self.send(CommandSet::ReadBusyFlagAndAddress).unwrap();
-        matches!(busy_state.check_bit(7), BitState::Set)
-    }
 }
 
 #[allow(dead_code)]
@@ -208,12 +196,12 @@ impl From<CommandSet> for Command {
                 match dir {
                     MoveDirection::RightToLeft => raw_bits.clear_bit(1),
                     MoveDirection::LeftToRight => raw_bits.set_bit(1),
-                }
+                };
 
                 match st {
                     ShiftType::CursorOnly => raw_bits.clear_bit(0),
                     ShiftType::CursorAndDisplay => raw_bits.set_bit(0),
-                }
+                };
 
                 Self::new(
                     RegisterSelection::Command,
@@ -232,15 +220,15 @@ impl From<CommandSet> for Command {
                 match display {
                     State::Off => raw_bits.clear_bit(2),
                     State::On => raw_bits.set_bit(2),
-                }
+                };
                 match cursor {
                     State::Off => raw_bits.clear_bit(1),
                     State::On => raw_bits.set_bit(1),
-                }
+                };
                 match cursor_blink {
                     State::Off => raw_bits.clear_bit(0),
                     State::On => raw_bits.set_bit(0),
-                }
+                };
 
                 Self::new(
                     RegisterSelection::Command,
@@ -255,12 +243,12 @@ impl From<CommandSet> for Command {
                 match st {
                     ShiftType::CursorOnly => raw_bits.clear_bit(3),
                     ShiftType::CursorAndDisplay => raw_bits.set_bit(3),
-                }
+                };
 
                 match dir {
                     MoveDirection::RightToLeft => raw_bits.clear_bit(2),
                     MoveDirection::LeftToRight => raw_bits.set_bit(2),
-                }
+                };
 
                 Self::new(
                     RegisterSelection::Command,
@@ -281,17 +269,17 @@ impl From<CommandSet> for Command {
                 match width {
                     DataWidth::Bit4 => raw_bits.clear_bit(4),
                     DataWidth::Bit8 => raw_bits.set_bit(4),
-                }
+                };
 
                 match line {
                     LineMode::OneLine => raw_bits.clear_bit(3),
                     LineMode::TwoLine => raw_bits.set_bit(3),
-                }
+                };
 
                 match font {
                     Font::Font5x8 => raw_bits.clear_bit(2),
                     Font::Font5x11 => raw_bits.set_bit(2),
-                }
+                };
 
                 Self::new(
                     RegisterSelection::Command,
