@@ -1,5 +1,8 @@
 # LCD1602 Driver
 
+[![crates.io](https://img.shields.io/crates/v/lcd1602-driver.svg)](https://crates.io/crates/lcd1602-driver)
+[![docs.rs](https://docs.rs/lcd1602-driver/badge.svg)](https://docs.rs/lcd1602-driver)
+
 An embedded-hal based driver for the LCD1602 display
 
 ### INFO
@@ -8,6 +11,7 @@ The most common functions have been implemented, but this crate is still in a **
 
 ## Features
 
+- Support both parallel interface, and I2C adapter board interface
 - Covers every(?) instruction of the LCD1602
   - 4 Pin / 8 Pin mode
   - 1 line / 2 line display
@@ -38,10 +42,16 @@ The most common functions have been implemented, but this crate is still in a **
 
 ## Examples
 
-See **examples/demo_with_stm32f411**
+See [examples/demo_with_stm32f411](https://github.com/eZioPan/lcd1602-driver/tree/latest/examples/demo_with_stm32f411)
 
-## Note
+## CHANGELOG
 
-This project originated from my STM32 notes and was later separated into a standalone project.
+### v0.1.0
 
-Currently, the project runs successfully on STM32F411RE.
+- First Release
+
+### v0.2.0
+
+- Upgrade to embedded-hal 1.0
+- Add I2C adapter board support
+- Simplify codebase
