@@ -1,4 +1,4 @@
-//! Built-in sender  
+//! Built-in sender
 //! If you want to create a new sender, you will need to implement [`SendCommand`] trait
 
 use embedded_hal::delay::DelayNs;
@@ -15,7 +15,7 @@ pub use i2c_sender::I2cSender;
 pub use parallel_sender::ParallelSender;
 
 /// [`SendCommand`] is the trait a sender should implement to communicate with the hardware
-pub trait SendCommand<Delayer: DelayNs> {
+pub trait SendCommand<Delayer: DelayNs, const READABLE: bool> {
     /// Parse a [`Command`] and sending data to hardware,
     /// and return the result value when [`Command`] is a [`ReadWriteOp::Read`](crate::command::ReadWriteOp::Read) command
     fn send(&mut self, command: Command) -> Option<u8>;

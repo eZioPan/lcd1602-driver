@@ -12,27 +12,33 @@ use crate::{
 
 use super::SendCommand;
 
+pub trait IfReadable<const READABLE: bool> {}
+
+impl<T> IfReadable<false> for T where T: OutputPin {}
+
+impl<T> IfReadable<true> for T where T: OutputPin + InputPin {}
+
 /// [`ParallelSender`] is the parallel interface to drive LCD1602
-pub struct ParallelSender<ControlPin, DBPin, BLPin, const PIN_CNT: usize>
+pub struct ParallelSender<ControlPin, DBPin, BLPin, const PIN_CNT: usize, const READABLE: bool>
 where
     ControlPin: OutputPin,
-    DBPin: OutputPin + InputPin,
+    DBPin: OutputPin + IfReadable<READABLE>,
     BLPin: StatefulOutputPin,
 {
     rs_pin: ControlPin,
-    rw_pin: ControlPin,
+    rw_pin: Option<ControlPin>,
     en_pin: ControlPin,
     db_pins: [DBPin; PIN_CNT],
     bl_pin: Option<BLPin>,
 }
 
-impl<ControlPin, DBPin, BLPin> ParallelSender<ControlPin, DBPin, BLPin, 4>
+impl<ControlPin, DBPin, BLPin> ParallelSender<ControlPin, DBPin, BLPin, 4, true>
 where
     ControlPin: OutputPin,
     DBPin: OutputPin + InputPin,
     BLPin: StatefulOutputPin,
 {
-    /// Create 4-pin parallel driver, will need other 3 pins to control LCD,  
+    /// Create 4-pin parallel driver, will need other 3 pins to control LCD,
     /// and a optional pin to control backlight (better connect the pin to a transistor)
     #[allow(clippy::too_many_arguments)]
     pub fn new_4pin(
@@ -47,7 +53,7 @@ where
     ) -> Self {
         Self {
             rs_pin: rs,
-            rw_pin: rw,
+            rw_pin: Some(rw),
             en_pin: en,
             db_pins: [db4, db5, db6, db7],
             bl_pin: bl,
@@ -55,13 +61,41 @@ where
     }
 }
 
-impl<ControlPin, DBPin, BLPin> ParallelSender<ControlPin, DBPin, BLPin, 8>
+impl<ControlPin, DBPin, BLPin> ParallelSender<ControlPin, DBPin, BLPin, 4, false>
+where
+    ControlPin: OutputPin,
+    DBPin: OutputPin,
+    BLPin: StatefulOutputPin,
+{
+    /// Create 4-pin parallel driver, will need other 2 pins to control LCD,
+    /// and a optional pin to control backlight (better connect the pin to a transistor)
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_4pin_write_only(
+        rs: ControlPin,
+        en: ControlPin,
+        db4: DBPin,
+        db5: DBPin,
+        db6: DBPin,
+        db7: DBPin,
+        bl: Option<BLPin>,
+    ) -> Self {
+        Self {
+            rs_pin: rs,
+            rw_pin: None,
+            en_pin: en,
+            db_pins: [db4, db5, db6, db7],
+            bl_pin: bl,
+        }
+    }
+}
+
+impl<ControlPin, DBPin, BLPin> ParallelSender<ControlPin, DBPin, BLPin, 8, true>
 where
     ControlPin: OutputPin,
     DBPin: OutputPin + InputPin,
     BLPin: StatefulOutputPin,
 {
-    /// Create 8-pin parallel driver, will need other 3 pins to control LCD,  
+    /// Create 8-pin parallel driver, will need other 3 pins to control LCD,
     /// and a optional pin to control backlight (better connect the pin to a transistor)
     #[allow(clippy::too_many_arguments)]
     pub fn new_8pin(
@@ -80,7 +114,7 @@ where
     ) -> Self {
         Self {
             rs_pin: rs,
-            rw_pin: rw,
+            rw_pin: Some(rw),
             en_pin: en,
             db_pins: [db0, db1, db2, db3, db4, db5, db6, db7],
             bl_pin: bl,
@@ -88,25 +122,72 @@ where
     }
 }
 
+impl<ControlPin, DBPin, BLPin> ParallelSender<ControlPin, DBPin, BLPin, 8, false>
+where
+    ControlPin: OutputPin,
+    DBPin: OutputPin,
+    BLPin: StatefulOutputPin,
+{
+    /// Create 8-pin parallel driver, will need other 2 pins to control LCD,
+    /// and a optional pin to control backlight (better connect the pin to a transistor)
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_8pin_write_only(
+        rs: ControlPin,
+        en: ControlPin,
+        db0: DBPin,
+        db1: DBPin,
+        db2: DBPin,
+        db3: DBPin,
+        db4: DBPin,
+        db5: DBPin,
+        db6: DBPin,
+        db7: DBPin,
+        bl: Option<BLPin>,
+    ) -> Self {
+        Self {
+            rs_pin: rs,
+            rw_pin: None,
+            en_pin: en,
+            db_pins: [db0, db1, db2, db3, db4, db5, db6, db7],
+            bl_pin: bl,
+        }
+    }
+}
+
+fn push_bits<const PIN_CNT: usize, DBPin: OutputPin>(pins: &mut [DBPin; PIN_CNT], raw_bits: u8) {
+    pins.iter_mut()
+        .enumerate()
+        .for_each(|(index, pin)| match raw_bits.check_bit(index as u8) {
+            BitState::Set => {
+                pin.set_high().ok().unwrap();
+            }
+            BitState::Clear => {
+                pin.set_low().ok().unwrap();
+            }
+        });
+}
+
 impl<ControlPin, DBPin, BLPin, const PIN_CNT: usize>
-    ParallelSender<ControlPin, DBPin, BLPin, PIN_CNT>
+    ParallelSender<ControlPin, DBPin, BLPin, PIN_CNT, false>
+where
+    ControlPin: OutputPin,
+    DBPin: OutputPin,
+    BLPin: StatefulOutputPin,
+{
+    fn push_bits(&mut self, raw_bits: u8) {
+        push_bits(&mut self.db_pins, raw_bits);
+    }
+}
+
+impl<ControlPin, DBPin, BLPin, const PIN_CNT: usize>
+    ParallelSender<ControlPin, DBPin, BLPin, PIN_CNT, true>
 where
     ControlPin: OutputPin,
     DBPin: OutputPin + InputPin,
     BLPin: StatefulOutputPin,
 {
     fn push_bits(&mut self, raw_bits: u8) {
-        self.db_pins
-            .iter_mut()
-            .enumerate()
-            .for_each(|(index, pin)| match raw_bits.check_bit(index as u8) {
-                BitState::Set => {
-                    pin.set_high().ok().unwrap();
-                }
-                BitState::Clear => {
-                    pin.set_low().ok().unwrap();
-                }
-            });
+        push_bits(&mut self.db_pins, raw_bits);
     }
 
     fn fetch_bits(&mut self) -> u8 {
@@ -130,32 +211,38 @@ where
     }
 }
 
-impl<ControlPin, DBPin, BLPin, const PIN_CNT: usize, Delayer> SendCommand<Delayer>
-    for ParallelSender<ControlPin, DBPin, BLPin, PIN_CNT>
+macro_rules! backlight_fns {
+    () => {
+        fn get_backlight(&mut self) -> State {
+            match self.bl_pin.as_mut() {
+                Some(bl_pin) => match bl_pin.is_set_high().unwrap() {
+                    true => State::On,
+                    false => State::Off,
+                },
+                None => Default::default(),
+            }
+        }
+
+        fn set_backlight(&mut self, backlight: State) {
+            if let Some(bl_pin) = self.bl_pin.as_mut() {
+                match backlight {
+                    State::Off => bl_pin.set_low().unwrap(),
+                    State::On => bl_pin.set_high().unwrap(),
+                }
+            }
+        }
+    };
+}
+
+impl<ControlPin, DBPin, BLPin, const PIN_CNT: usize, Delayer> SendCommand<Delayer, true>
+    for ParallelSender<ControlPin, DBPin, BLPin, PIN_CNT, true>
 where
     ControlPin: OutputPin,
     DBPin: OutputPin + InputPin,
     BLPin: StatefulOutputPin,
     Delayer: DelayNs,
 {
-    fn get_backlight(&mut self) -> State {
-        match self.bl_pin.as_mut() {
-            Some(bl_pin) => match bl_pin.is_set_high().unwrap() {
-                true => State::On,
-                false => State::Off,
-            },
-            None => Default::default(),
-        }
-    }
-
-    fn set_backlight(&mut self, backlight: State) {
-        if let Some(bl_pin) = self.bl_pin.as_mut() {
-            match backlight {
-                State::Off => bl_pin.set_low().unwrap(),
-                State::On => bl_pin.set_high().unwrap(),
-            }
-        }
-    }
+    backlight_fns!();
 
     fn send(&mut self, command: Command) -> Option<u8> {
         assert!(
@@ -174,12 +261,15 @@ where
             }
         }
 
-        match command.get_read_write_op() {
-            ReadWriteOp::Write => {
-                self.rw_pin.set_low().ok().unwrap();
-            }
-            ReadWriteOp::Read => {
-                self.rw_pin.set_high().ok().unwrap();
+        {
+            let rw_pin = self.rw_pin.as_mut().expect("RW pin for readable");
+            match command.get_read_write_op() {
+                ReadWriteOp::Write => {
+                    rw_pin.set_low().ok().unwrap();
+                }
+                ReadWriteOp::Read => {
+                    rw_pin.set_high().ok().unwrap();
+                }
             }
         }
 
@@ -242,5 +332,79 @@ where
                 _ => unreachable!(),
             },
         }
+    }
+}
+
+impl<ControlPin, DBPin, BLPin, const PIN_CNT: usize, Delayer> SendCommand<Delayer, false>
+    for ParallelSender<ControlPin, DBPin, BLPin, PIN_CNT, false>
+where
+    ControlPin: OutputPin,
+    DBPin: OutputPin,
+    BLPin: StatefulOutputPin,
+    Delayer: DelayNs,
+{
+    backlight_fns!();
+
+    fn send(&mut self, command: Command) -> Option<u8> {
+        assert!(
+            PIN_CNT == 4 || PIN_CNT == 8,
+            "Pins other than 4 or 8 are not supported"
+        );
+
+        self.en_pin.set_low().ok().unwrap();
+
+        match command.get_register_selection() {
+            RegisterSelection::Command => {
+                self.rs_pin.set_low().ok().unwrap();
+            }
+            RegisterSelection::Data => {
+                self.rs_pin.set_high().ok().unwrap();
+            }
+        }
+
+        match command.get_read_write_op() {
+            ReadWriteOp::Write => {
+                let bits = command
+                    .get_data()
+                    .expect("Write command but no data provide");
+                match PIN_CNT {
+                    4 => match bits {
+                        Bits::Bit4(raw_bits) => {
+                            assert!(raw_bits < 2u8.pow(4), "data is greater than 4 bits");
+                            self.push_bits(raw_bits);
+                            self.en_pin.set_high().ok().unwrap();
+                            self.en_pin.set_low().ok().unwrap();
+                        }
+                        Bits::Bit8(raw_bits) => {
+                            self.push_bits(raw_bits >> 4);
+                            self.en_pin.set_high().ok().unwrap();
+                            self.en_pin.set_low().ok().unwrap();
+                            self.push_bits(raw_bits & 0b1111);
+                            self.en_pin.set_high().ok().unwrap();
+                            self.en_pin.set_low().ok().unwrap();
+                        }
+                    },
+
+                    8 => {
+                        if let Bits::Bit8(raw_bits) = bits {
+                            self.push_bits(raw_bits);
+                            self.en_pin.set_high().ok().unwrap();
+                            self.en_pin.set_low().ok().unwrap();
+                        } else {
+                            panic!("in 8 pin mode, data should always be 8 bit")
+                        }
+                    }
+
+                    _ => unreachable!(),
+                }
+
+                None
+            }
+            ReadWriteOp::Read => unreachable!(),
+        }
+    }
+
+    fn check_busy(&mut self) -> bool {
+        false
     }
 }

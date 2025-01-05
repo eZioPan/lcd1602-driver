@@ -128,9 +128,9 @@ impl Config {
     }
 }
 
-impl<'a, 'b, Sender, Delayer> Lcd<'a, 'b, Sender, Delayer>
+impl<'a, 'b, Sender, Delayer, const READABLE: bool> Lcd<'a, 'b, Sender, Delayer, READABLE>
 where
-    Sender: SendCommand<Delayer>,
+    Sender: SendCommand<Delayer, READABLE>,
     Delayer: DelayNs,
 {
     /// Create a [`Lcd`] driver, and init LCD hardware
