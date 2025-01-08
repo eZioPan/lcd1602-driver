@@ -1,18 +1,36 @@
+//! Drive LCD1602 with a STM32F411RET6 in 4 Pin Mode
+//!
+//! this demo use many different read/write functions intentionally, to test functions works just fine.
+
+//! Wiring diagram
+//!
+//! LCD1602 <-> STM32F411RET6
+//!     Vss <-> GND
+//!     Vdd <-> 5V (It is best to use an external source for the 5V pin, such as the 5V output from a DAPLink device or USB.)
+//!      V0 <-> potentiometer <-> 5V & GND (to adjust the display contrast)
+//!      RS <-> PA0
+//!      RW <-> PA1
+//!      EN <-> PA2 (and optionally connect to a 4.7 kOhm Pulldown resistor, to stable voltage level when STM32 reset)
+//!      D4 <-> PA3
+//!      D5 <-> PA4
+//!      D6 <-> PA5
+//!      D7 <-> PA6
+//!       A <-> 5V
+//!       K <-> external NPN transistor collector
+//!     external NPN transistor base <-> PA7
+//!     external NPN transistor emitter <-> GND
+
 #![no_std]
 #![no_main]
 
 use panic_rtt_target as _;
 use rtt_target::rtt_init_print;
-use stm32f4xx_hal::{
-    i2c::{self, I2c},
-    pac,
-    prelude::*,
-};
+use stm32f4xx_hal::{pac, prelude::*};
 
 use lcd1602_driver::{
     command::{DataWidth, MoveDirection, State},
-    lcd::{self, Anim, Basic, BasicRead, Ext, ExtRead, FlipStyle, Lcd, MoveStyle},
-    sender::I2cSender,
+    lcd::{self, Anim, Basic, Ext, FlipStyle, Lcd, MoveStyle},
+    sender::ParallelSender,
     utils::BitOps,
 };
 
@@ -35,32 +53,55 @@ fn main() -> ! {
 
     // init needed digital pins
 
-    let gpiob = dp.GPIOB.split();
+    let gpioa = dp.GPIOA.split();
 
-    let mut i2c = I2c::new(
-        dp.I2C1,
-        (gpiob.pb6, gpiob.pb7),
-        i2c::Mode::standard(100.kHz()), // The PCF8574T max I2C speed
-        &clocks,
-    );
+    // Push-pull mode for a fast interaction
+    let rs_pin = gpioa.pa0.into_push_pull_output().erase();
+    let rw_pin = gpioa.pa1.into_push_pull_output().erase();
+    let en_pin = gpioa.pa2.into_push_pull_output().erase();
+
+    let db4_pin = gpioa
+        .pa3
+        .into_open_drain_output()
+        .internal_pull_up(true)
+        .erase();
+    let db5_pin = gpioa
+        .pa4
+        .into_open_drain_output()
+        .internal_pull_up(true)
+        .erase();
+    let db6_pin = gpioa
+        .pa5
+        .into_open_drain_output()
+        .internal_pull_up(true)
+        .erase();
+    let db7_pin = gpioa
+        .pa6
+        .into_open_drain_output()
+        .internal_pull_up(true)
+        .erase();
+
+    let bl_pin = gpioa.pa7.into_push_pull_output().erase();
 
     // put pins together
-    let mut sender = I2cSender::new(&mut i2c, 0x27);
+    let mut sender = ParallelSender::new_4pin(
+        rs_pin,
+        rw_pin,
+        en_pin,
+        db4_pin,
+        db5_pin,
+        db6_pin,
+        db7_pin,
+        Some(bl_pin),
+    );
 
     let lcd_config = lcd::Config::default().set_data_width(DataWidth::Bit4);
 
-    // create and init LCD1602
+    // init LCD1602
     let mut lcd = Lcd::new(&mut sender, &mut delayer, lcd_config, 10);
 
     // draw a little heart in CGRAM
     lcd.write_graph_to_cgram(1, &HEART);
-
-    // to test cgram read
-    // read heart graph from CGRAM, modify it to a diamond shape, then write it to another CGRAM address
-    let mut graph_data = lcd.read_graph_from_cgram(1);
-    graph_data[1].set_bit(2);
-    graph_data[2].set_bit(2);
-    lcd.write_graph_to_cgram(2, &graph_data);
 
     lcd.set_cursor_blink_state(State::On);
 
@@ -122,11 +163,6 @@ fn main() -> ! {
     lcd.write_graph_to_pos(1, (15, 0));
     lcd.delay_ms(1_000);
     lcd.write_graph_to_pos(2, (15, 1));
-
-    // to test read from DDRAM
-    // read from first line end, and write same character to the second line end
-    let char_at_end = lcd.read_byte_from_pos((39, 0));
-    lcd.write_byte_to_pos(char_at_end, (39, 1));
 
     // shift display window
     lcd.delay_ms(1_000);
