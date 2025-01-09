@@ -40,7 +40,7 @@ impl<'a, I2cLcd: I2c<A>, A: AddressMode + Clone> I2cSender<'a, I2cLcd, A> {
     }
 }
 
-impl<'a, I2cLcd, A, Delayer> SendCommand<Delayer> for I2cSender<'a, I2cLcd, A>
+impl<'a, I2cLcd, A, Delayer> SendCommand<Delayer, true> for I2cSender<'a, I2cLcd, A>
 where
     I2cLcd: I2c<A>,
     A: AddressMode + Clone,
@@ -195,6 +195,7 @@ impl From<Command> for I2cRawData {
     }
 }
 
+#[allow(dead_code)]
 struct I2cSeq(u8, [u8; 6]);
 
 impl From<I2cRawData> for I2cSeq {

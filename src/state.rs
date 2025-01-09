@@ -38,11 +38,6 @@ impl LcdState {
     }
 
     pub(crate) fn set_line_mode(&mut self, line: LineMode) {
-        assert!(
-            (self.get_font() == Font::Font5x11) && (line == LineMode::OneLine),
-            "font is 5x11, line cannot be 2"
-        );
-
         self.line = line;
     }
 
@@ -58,11 +53,6 @@ impl LcdState {
     }
 
     pub(crate) fn set_font(&mut self, font: Font) {
-        assert!(
-            (self.get_line_mode() == LineMode::TwoLine) && (font == Font::Font5x8),
-            "there is 2 line, font cannot be 5x11"
-        );
-
         self.font = font;
     }
 

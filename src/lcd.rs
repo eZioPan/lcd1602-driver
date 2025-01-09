@@ -14,7 +14,7 @@ pub use init::Config;
 mod impls;
 
 /// [`Lcd`] is the main struct to drive a LCD1602
-pub struct Lcd<'a, 'b, Sender, Delayer>
+pub struct Lcd<'a, 'b, Sender, Delayer, const READABLE: bool>
 where
     Delayer: DelayNs,
 {
@@ -27,8 +27,6 @@ where
 /// All basic command to control LCD1602
 #[allow(missing_docs)]
 pub trait Basic {
-    fn read_u8_from_cur(&mut self) -> u8;
-
     fn write_u8_to_cur(&mut self, byte: u8);
 
     fn write_graph_to_cgram(&mut self, index: u8, graph_data: &[u8; 8]);
@@ -100,6 +98,12 @@ pub trait Basic {
     fn delay_us(&mut self, us: u32);
 }
 
+/// Basic read functions for the LCD
+#[allow(missing_docs)]
+pub trait BasicRead: Basic {
+    fn read_u8_from_cur(&mut self) -> u8;
+}
+
 /// Useful command to control LCD1602
 pub trait Ext: Basic {
     /// toggle entire display on and off (it doesn't toggle backlight)
@@ -140,15 +144,6 @@ pub trait Ext: Basic {
         self.write_u8_to_cur(byte);
     }
 
-    /// read a byte from specific position
-    fn read_byte_from_pos(&mut self, pos: (u8, u8)) -> u8 {
-        let original_pos = self.get_cursor_pos();
-        self.set_cursor_pos(pos);
-        let data = self.read_u8_from_cur();
-        self.set_cursor_pos(original_pos);
-        data
-    }
-
     /// write a char to specific position
     fn write_char_to_pos(&mut self, char: char, pos: (u8, u8)) {
         self.set_cursor_pos(pos);
@@ -167,6 +162,23 @@ pub trait Ext: Basic {
         self.write_byte_to_pos(index, pos);
     }
 
+    /// change cursor position with relative offset
+    fn offset_cursor_pos(&mut self, offset: (i8, i8)) {
+        self.set_cursor_pos(self.calculate_pos_by_offset(self.get_cursor_pos(), offset));
+    }
+}
+
+/// Useful commands to read data from the LCD
+pub trait ExtRead: Ext + BasicRead {
+    /// read a byte from specific position
+    fn read_byte_from_pos(&mut self, pos: (u8, u8)) -> u8 {
+        let original_pos = self.get_cursor_pos();
+        self.set_cursor_pos(pos);
+        let data = self.read_u8_from_cur();
+        self.set_cursor_pos(original_pos);
+        data
+    }
+
     /// read custom graph data from CGRAM
     fn read_graph_from_cgram(&mut self, index: u8) -> [u8; 8] {
         assert!(index < 8, "index too big, should less than 8");
@@ -181,11 +193,6 @@ pub trait Ext: Basic {
             .for_each(|line| *line = self.read_u8_from_cur());
 
         graph
-    }
-
-    /// change cursor position with relative offset
-    fn offset_cursor_pos(&mut self, offset: (i8, i8)) {
-        self.set_cursor_pos(self.calculate_pos_by_offset(self.get_cursor_pos(), offset));
     }
 }
 

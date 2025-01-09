@@ -4,11 +4,11 @@ use crate::command::{DataWidth, Font, LineMode, MoveDirection, RAMType, ShiftTyp
 use crate::sender::SendCommand;
 use crate::{command::CommandSet, lcd::State};
 
-use super::{Anim, Basic, Ext, Lcd};
+use super::{Anim, Basic, BasicRead, Ext, ExtRead, Lcd};
 
-impl<'a, 'b, Sender, Delayer> Basic for Lcd<'a, 'b, Sender, Delayer>
+impl<'a, 'b, Sender, Delayer, const READABLE: bool> Basic for Lcd<'a, 'b, Sender, Delayer, READABLE>
 where
-    Sender: SendCommand<Delayer>,
+    Sender: SendCommand<Delayer, READABLE>,
     Delayer: DelayNs,
 {
     fn set_backlight(&mut self, backlight: State) {
@@ -18,16 +18,6 @@ where
 
     fn get_backlight(self) -> State {
         self.state.get_backlight()
-    }
-
-    fn read_u8_from_cur(&mut self) -> u8 {
-        self.sender
-            .wait_and_send(
-                CommandSet::ReadDataFromRAM.into(),
-                self.delayer,
-                self.poll_interval_us,
-            )
-            .unwrap()
     }
 
     fn write_u8_to_cur(&mut self, byte: u8) {
@@ -316,16 +306,39 @@ where
     }
 }
 
-impl<'a, 'b, Sender, Delayer> Ext for Lcd<'a, 'b, Sender, Delayer>
+impl<'a, 'b, Sender, Delayer> BasicRead for Lcd<'a, 'b, Sender, Delayer, true>
+where
+    Sender: SendCommand<Delayer, true>,
+    Delayer: DelayNs,
+{
+    fn read_u8_from_cur(&mut self) -> u8 {
+        self.sender
+            .wait_and_send(
+                CommandSet::ReadDataFromRAM.into(),
+                self.delayer,
+                self.poll_interval_us,
+            )
+            .unwrap()
+    }
+}
+
+impl<'a, 'b, Sender, Delayer, const READABLE: bool> Ext for Lcd<'a, 'b, Sender, Delayer, READABLE>
 where
     Delayer: DelayNs,
-    Sender: SendCommand<Delayer>,
+    Sender: SendCommand<Delayer, READABLE>,
 {
 }
 
-impl<'a, 'b, Sender, Delayer> Anim for Lcd<'a, 'b, Sender, Delayer>
+impl<'a, 'b, Sender, Delayer> ExtRead for Lcd<'a, 'b, Sender, Delayer, true>
 where
     Delayer: DelayNs,
-    Sender: SendCommand<Delayer>,
+    Sender: SendCommand<Delayer, true>,
+{
+}
+
+impl<'a, 'b, Sender, Delayer, const READABLE: bool> Anim for Lcd<'a, 'b, Sender, Delayer, READABLE>
+where
+    Delayer: DelayNs,
+    Sender: SendCommand<Delayer, READABLE>,
 {
 }

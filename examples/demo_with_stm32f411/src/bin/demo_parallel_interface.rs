@@ -29,7 +29,7 @@ use stm32f4xx_hal::{pac, prelude::*};
 
 use lcd1602_driver::{
     command::{DataWidth, MoveDirection, State},
-    lcd::{self, Anim, Basic, Ext, FlipStyle, Lcd, MoveStyle},
+    lcd::{self, Anim, Basic, Ext, ExtRead, FlipStyle, Lcd, MoveStyle},
     sender::ParallelSender,
     utils::BitOps,
 };
