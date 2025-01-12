@@ -1,11 +1,15 @@
 //! Built-in sender
+//!
 //! If you want to create a new sender, you will need to implement [`SendCommand`] trait
 
-use embedded_hal::delay::DelayNs;
+use embedded_hal::{
+    delay::DelayNs,
+    digital::{InputPin, OutputPin},
+};
 
 use crate::{
     command::{Command, CommandSet, State},
-    utils::BitOps,
+    utils::{BitOps, BitState},
 };
 
 mod i2c_sender;
@@ -13,6 +17,17 @@ mod parallel_sender;
 
 pub use i2c_sender::I2cSender;
 pub use parallel_sender::ParallelSender;
+
+/// [`IfReadable`] trait is a simple const bound trait
+///
+/// Note:
+///
+/// If your [`SendCommand`] implementation has same code on both Read-Write and Write-Only mode,
+/// you can replace trait bound `Output + Input` with `Output + IfReadable<READABLE>`.
+pub trait IfReadable<const READABLE: bool> {}
+
+impl<T> IfReadable<false> for T where T: OutputPin {}
+impl<T> IfReadable<true> for T where T: OutputPin + InputPin {}
 
 /// [`SendCommand`] is the trait a sender should implement to communicate with the hardware
 pub trait SendCommand<Delayer: DelayNs, const READABLE: bool> {
@@ -23,47 +38,69 @@ pub trait SendCommand<Delayer: DelayNs, const READABLE: bool> {
     /// Wait specific duration, and send command
     fn delay_and_send(
         &mut self,
-        command: Command,
+        command_set: CommandSet,
         delayer: &mut Delayer,
         delay_us: u32,
     ) -> Option<u8> {
         delayer.delay_us(delay_us);
-        self.send(command)
+        self.send(command_set.into())
     }
 
     /// Check LCD busy state, when LCD is idle, send the command
     fn wait_and_send(
         &mut self,
-        command: Command,
+        command_set: CommandSet,
         delayer: &mut Delayer,
         poll_interval_us: u32,
     ) -> Option<u8> {
         self.wait_for_idle(delayer, poll_interval_us);
-        self.send(command)
+
+        let res = self.send(command_set.into());
+
+        // According to ST6077U datasheet, after CommandSet::ClearDisplay or CommandSet::ReturnHome,
+        // we will need to manually wait at least 1.52 ms before sending other command.
+        // This only needs to happen if we don't know when the command finishes (aka not readable)
+        if !READABLE
+            && (command_set == CommandSet::ClearDisplay || command_set == CommandSet::ReturnHome)
+        {
+            self.wait_for_idle(delayer, poll_interval_us.max(1520));
+        }
+
+        res
     }
 
     /// Wait in a busy loop, until LCD is idle
+    ///
+    /// If LCD driver is Write-Only, this method will wait one `poll_interval_us` and return.
     fn wait_for_idle(&mut self, delayer: &mut Delayer, poll_interval_us: u32) {
-        while self.check_busy() {
+        if READABLE {
+            while self.check_busy() {
+                delayer.delay_us(poll_interval_us);
+            }
+        } else {
             delayer.delay_us(poll_interval_us);
         }
     }
 
     /// Check LCD busy state
+    ///
+    /// If LCD driver is Write-Only, this method will return false instantly.
     fn check_busy(&mut self) -> bool {
-        use crate::utils::BitState;
-
-        let busy_state = self
-            .send(CommandSet::ReadBusyFlagAndAddress.into())
-            .unwrap();
-        matches!(busy_state.check_bit(7), BitState::Set)
+        if READABLE {
+            let busy_state = self
+                .send(CommandSet::ReadBusyFlagAndAddress.into())
+                .unwrap();
+            matches!(busy_state.check_bit(7), BitState::Set)
+        } else {
+            false
+        }
     }
 
     /// Get the current backlight
     ///
     /// Note:
     /// If a driver doesn't support read backlight state, just silently bypass it
-    fn get_backlight(&mut self) -> State {
+    fn get_actual_backlight(&mut self) -> State {
         State::default()
     }
 
@@ -72,5 +109,5 @@ pub trait SendCommand<Delayer: DelayNs, const READABLE: bool> {
     /// Note:
     /// If a driver doesn't support change backlight, just silently bypass it
     #[allow(unused_variables)]
-    fn set_backlight(&mut self, backlight: State) {}
+    fn set_actual_backlight(&mut self, backlight: State) {}
 }

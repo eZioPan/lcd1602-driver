@@ -1,5 +1,5 @@
-/Cargo.lock
-/target
-/examples/*/Cargo.lock
-/examples/*/target
-/examples/*/.vscode
+Cargo.lock
+target
+.vscode
+_setupenv.*
+openocd.cfg

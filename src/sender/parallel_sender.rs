@@ -7,16 +7,9 @@ use embedded_hal::{
 
 use crate::{
     command::{Bits, Command, ReadWriteOp, RegisterSelection, State},
+    sender::{IfReadable, SendCommand},
     utils::{BitOps, BitState},
 };
-
-use super::SendCommand;
-
-pub trait IfReadable<const READABLE: bool> {}
-
-impl<T> IfReadable<false> for T where T: OutputPin {}
-
-impl<T> IfReadable<true> for T where T: OutputPin + InputPin {}
 
 /// [`ParallelSender`] is the parallel interface to drive LCD1602
 pub struct ParallelSender<ControlPin, DBPin, BLPin, const PIN_CNT: usize, const READABLE: bool>
@@ -154,31 +147,30 @@ where
     }
 }
 
-fn push_bits<const PIN_CNT: usize, DBPin: OutputPin>(pins: &mut [DBPin; PIN_CNT], raw_bits: u8) {
-    pins.iter_mut()
-        .enumerate()
-        .for_each(|(index, pin)| match raw_bits.check_bit(index as u8) {
-            BitState::Set => {
-                pin.set_high().ok().unwrap();
-            }
-            BitState::Clear => {
-                pin.set_low().ok().unwrap();
-            }
-        });
-}
-
-impl<ControlPin, DBPin, BLPin, const PIN_CNT: usize>
-    ParallelSender<ControlPin, DBPin, BLPin, PIN_CNT, false>
+// Both Read-Write and Write-Only Sender support write-to-lcd method
+impl<ControlPin, DBPin, BLPin, const PIN_CNT: usize, const READABLE: bool>
+    ParallelSender<ControlPin, DBPin, BLPin, PIN_CNT, READABLE>
 where
     ControlPin: OutputPin,
-    DBPin: OutputPin,
+    DBPin: OutputPin + IfReadable<READABLE>,
     BLPin: StatefulOutputPin,
 {
     fn push_bits(&mut self, raw_bits: u8) {
-        push_bits(&mut self.db_pins, raw_bits);
+        self.db_pins
+            .iter_mut()
+            .enumerate()
+            .for_each(|(index, pin)| match raw_bits.check_bit(index as u8) {
+                BitState::Set => {
+                    pin.set_high().ok().unwrap();
+                }
+                BitState::Clear => {
+                    pin.set_low().ok().unwrap();
+                }
+            });
     }
 }
 
+// Read-Write Sender also support read-from-lcd method
 impl<ControlPin, DBPin, BLPin, const PIN_CNT: usize>
     ParallelSender<ControlPin, DBPin, BLPin, PIN_CNT, true>
 where
@@ -186,10 +178,6 @@ where
     DBPin: OutputPin + InputPin,
     BLPin: StatefulOutputPin,
 {
-    fn push_bits(&mut self, raw_bits: u8) {
-        push_bits(&mut self.db_pins, raw_bits);
-    }
-
     fn fetch_bits(&mut self) -> u8 {
         self.db_pins
             .iter_mut()
@@ -213,7 +201,7 @@ where
 
 macro_rules! backlight_fns {
     () => {
-        fn get_backlight(&mut self) -> State {
+        fn get_actual_backlight(&mut self) -> State {
             match self.bl_pin.as_mut() {
                 Some(bl_pin) => match bl_pin.is_set_high().unwrap() {
                     true => State::On,
@@ -223,7 +211,7 @@ macro_rules! backlight_fns {
             }
         }
 
-        fn set_backlight(&mut self, backlight: State) {
+        fn set_actual_backlight(&mut self, backlight: State) {
             if let Some(bl_pin) = self.bl_pin.as_mut() {
                 match backlight {
                     State::Off => bl_pin.set_low().unwrap(),
@@ -402,9 +390,5 @@ where
             }
             ReadWriteOp::Read => unreachable!(),
         }
-    }
-
-    fn check_busy(&mut self) -> bool {
-        false
     }
 }

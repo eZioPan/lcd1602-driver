@@ -24,14 +24,27 @@ where
     poll_interval_us: u32,
 }
 
+/// [`CGRAMGraph`] represent a graph inside a CGRAM, that can be draw on screen
+#[derive(Default)]
+pub struct CGRAMGraph {
+    /// This is the upper part of the graph.  
+    /// It shows for both 5x8 and 5x11 Font
+    pub upper: [u8; 8],
+    /// This is the lower part of the graph.  
+    /// It shows only 5x11 Font.
+    ///
+    /// Although this part is only 3 u8, but in LCD hardware, it will occupied a full graph point.
+    pub lower: Option<[u8; 3]>,
+}
+
 /// All basic command to control LCD1602
 #[allow(missing_docs)]
 pub trait Basic {
-    fn write_u8_to_cur(&mut self, byte: u8);
+    fn write_byte_to_cur(&mut self, byte: u8);
 
-    fn write_graph_to_cgram(&mut self, index: u8, graph_data: &[u8; 8]);
-
-    fn write_graph_to_cur(&mut self, index: u8);
+    /// Note:  
+    /// We allow write Font5x11 graph even under Font5x8 mode.
+    fn write_graph_to_cgram(&mut self, index: u8, graph_data: &CGRAMGraph);
 
     fn clean_display(&mut self);
 
@@ -87,7 +100,7 @@ pub trait Basic {
     /// Due to driver implementation, this function may have actual effect, or not
     fn set_backlight(&mut self, backlight: State);
 
-    fn get_backlight(self) -> State;
+    fn get_backlight(&self) -> State;
 
     fn calculate_pos_by_offset(&self, start: (u8, u8), offset: (i8, i8)) -> (u8, u8);
 
@@ -129,7 +142,7 @@ pub trait Ext: Basic {
             _ => 0xFF,
         };
 
-        self.write_u8_to_cur(out_byte);
+        self.write_byte_to_cur(out_byte);
     }
 
     /// write string to current position
@@ -141,7 +154,7 @@ pub trait Ext: Basic {
     fn write_byte_to_pos(&mut self, byte: u8, pos: (u8, u8)) {
         self.set_cursor_pos(pos);
 
-        self.write_u8_to_cur(byte);
+        self.write_byte_to_cur(byte);
     }
 
     /// write a char to specific position
@@ -156,10 +169,39 @@ pub trait Ext: Basic {
         self.write_str_to_cur(str);
     }
 
+    /// write custom graph to current position
+    ///
+    /// If you write 5x11 Font graph, but only want to access upper part of the graph in 5x8 Font mode,  
+    /// you will need to shift `index` one bit left to get correct graph.
+    fn write_graph_to_cur(&mut self, index: u8) {
+        match self.get_font() {
+            Font::Font5x8 => assert!(index < 8, "index too big, should less than 8 for 5x8 Font"),
+            Font::Font5x11 => assert!(index < 4, "index too big, should less than 4 for 5x11 Font"),
+        }
+
+        self.write_byte_to_cur(match self.get_font() {
+            Font::Font5x8 => index,
+            Font::Font5x11 => index << 1,
+        });
+    }
+
     /// write custom graph to specific position
+    ///
+    /// If you write 5x11 Font graph, but only want to access upper part of the graph in 5x8 Font mode,  
+    /// you will need to shift `index` one bit left to get correct graph.
     fn write_graph_to_pos(&mut self, index: u8, pos: (u8, u8)) {
-        assert!(index < 8, "Only 8 graphs allowed in CGRAM");
-        self.write_byte_to_pos(index, pos);
+        match self.get_font() {
+            Font::Font5x8 => assert!(index < 8, "Only 8 graphs allowed in CGRAM for 5x8 Font"),
+            Font::Font5x11 => assert!(index < 4, "Only 4 graphs allowed in CGRAM for 5x11 Font"),
+        }
+
+        self.write_byte_to_pos(
+            match self.get_font() {
+                Font::Font5x8 => index,
+                Font::Font5x11 => index << 1,
+            },
+            pos,
+        );
     }
 
     /// change cursor position with relative offset
@@ -180,15 +222,38 @@ pub trait ExtRead: Ext + BasicRead {
     }
 
     /// read custom graph data from CGRAM
-    fn read_graph_from_cgram(&mut self, index: u8) -> [u8; 8] {
-        assert!(index < 8, "index too big, should less than 8");
+    ///
+    /// We always read graph data as Font 5x11 mode,  
+    /// user will take response to check whether the second part is needed.
+    fn read_graph_from_cgram(&mut self, index: u8) -> CGRAMGraph {
+        match self.get_font() {
+            Font::Font5x8 => assert!(index < 8, "index too big, should less than 8 for 5x8 Font"),
+            Font::Font5x11 => assert!(index < 4, "index too big, should less than 4 for 5x11 Font"),
+        }
 
         // convert index to cgram address
-        self.set_cgram_addr(index.checked_shl(3).unwrap());
+        self.set_cgram_addr(
+            index
+                .checked_shl(match self.get_font() {
+                    Font::Font5x8 => 3,
+                    Font::Font5x11 => 4,
+                })
+                .unwrap(),
+        );
 
-        let mut graph: [u8; 8] = [0u8; 8];
+        let mut graph = CGRAMGraph::default();
 
         graph
+            .upper
+            .iter_mut()
+            .for_each(|line| *line = self.read_u8_from_cur());
+
+        graph.lower = Some([0u8; 3]);
+
+        graph
+            .lower
+            .as_mut()
+            .unwrap()
             .iter_mut()
             .for_each(|line| *line = self.read_u8_from_cur());
 
@@ -365,7 +430,7 @@ pub trait Anim: Ext {
             }
         }
 
-        // remeber to restore cursor state
+        // remember to restore cursor state
         if cursor_state_changed {
             self.set_cursor_state(State::On);
         }

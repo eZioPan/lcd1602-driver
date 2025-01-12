@@ -38,6 +38,12 @@ impl LcdState {
     }
 
     pub(crate) fn set_line_mode(&mut self, line: LineMode) {
+        if self.get_font() == Font::Font5x11 {
+            assert!(
+                line == LineMode::OneLine,
+                "Font is 5x11, LineMode cannot be TwoLine"
+            )
+        }
         self.line = line;
     }
 
@@ -53,6 +59,12 @@ impl LcdState {
     }
 
     pub(crate) fn set_font(&mut self, font: Font) {
+        if self.get_line_mode() == LineMode::TwoLine {
+            assert!(
+                font == Font::Font5x8,
+                "LineMode is TwoLine, Font cannot be 5x11"
+            )
+        }
         self.font = font;
     }
 
@@ -97,11 +109,6 @@ impl LcdState {
     }
 
     pub(crate) fn get_cursor_pos(&self) -> (u8, u8) {
-        assert!(
-            self.get_ram_type() == RAMType::DDRam,
-            "Current in CGRAM, use .set_cursor_pos() to change to DDRAM"
-        );
-
         self.cursor_pos
     }
 

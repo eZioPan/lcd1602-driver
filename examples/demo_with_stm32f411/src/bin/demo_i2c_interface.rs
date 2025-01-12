@@ -1,3 +1,15 @@
+//! Drive LCD1602 with a STM32F411RET6 with a PCF8574T I2C Adapt Board
+//!
+//! this demo use many different read/write functions intentionally, to test functions works just fine.
+
+//! Wiring diagram
+//!
+//! I2C Board <-> STM32F411RET6
+//!     VCC <-> 5V (It is better to use an external source for the 5V pin, such as a USB powered 5V pin.)
+//!     GND <-> GND
+//!     SCL <-> PB6
+//!     SDA <-> PB7
+
 #![no_std]
 #![no_main]
 
@@ -11,15 +23,20 @@ use stm32f4xx_hal::{
 
 use lcd1602_driver::{
     command::{DataWidth, MoveDirection, State},
-    lcd::{self, Anim, Basic, BasicRead, Ext, ExtRead, FlipStyle, Lcd, MoveStyle},
+    lcd::{self, Anim, Basic, CGRAMGraph, Ext, ExtRead, FlipStyle, Lcd, MoveStyle},
     sender::I2cSender,
     utils::BitOps,
 };
 
 // a heart shape
-const HEART: [u8; 8] = [
-    0b00000, 0b00000, 0b01010, 0b11111, 0b01110, 0b00100, 0b00000, 0b00000,
-];
+//
+// This heart shape is a 5x11 Font shape, we can use the upper part in 5x8 Font mode.
+const HEART: CGRAMGraph = CGRAMGraph {
+    upper: [
+        0b00000, 0b00000, 0b01010, 0b11111, 0b01110, 0b00100, 0b00000, 0b00000,
+    ],
+    lower: Some([0b00100, 0b01110, 0b00100]),
+};
 
 #[cortex_m_rt::entry]
 fn main() -> ! {
@@ -45,22 +62,23 @@ fn main() -> ! {
     );
 
     // put pins together
-    let mut sender = I2cSender::new(&mut i2c, 0x27);
+    let mut sender = I2cSender::new(&mut i2c, 0x27u8);
 
     let lcd_config = lcd::Config::default().set_data_width(DataWidth::Bit4);
 
-    // create and init LCD1602
-    let mut lcd = Lcd::new(&mut sender, &mut delayer, lcd_config, 10);
+    // init LCD1602
+    let mut lcd = Lcd::new(&mut sender, &mut delayer, lcd_config, None);
 
     // draw a little heart in CGRAM
-    lcd.write_graph_to_cgram(1, &HEART);
+    lcd.write_graph_to_cgram(0, &HEART);
 
     // to test cgram read
     // read heart graph from CGRAM, modify it to a diamond shape, then write it to another CGRAM address
-    let mut graph_data = lcd.read_graph_from_cgram(1);
-    graph_data[1].set_bit(2);
-    graph_data[2].set_bit(2);
-    lcd.write_graph_to_cgram(2, &graph_data);
+    let mut graph_data = lcd.read_graph_from_cgram(0);
+    graph_data.upper[1].set_bit(2);
+    graph_data.upper[2].set_bit(2);
+    graph_data.lower.as_mut().unwrap()[1].clear_bit(2);
+    lcd.write_graph_to_cgram(1, &graph_data);
 
     lcd.set_cursor_blink_state(State::On);
 
@@ -83,7 +101,7 @@ fn main() -> ! {
     let line_capacity = lcd.get_line_capacity();
 
     // to test write character to specified position
-    // since tilde chracter (~) is not in CGROM of LCD1602A
+    // since tilde character (~) is not in CGROM of LCD1602A
     // it should be displayed as a full rectangle
     lcd.write_char_to_pos('~', (15, 0));
 
@@ -119,8 +137,10 @@ fn main() -> ! {
 
     // replace 2 rectangle with custom heart shape and diamond shape
     lcd.delay_ms(1_000);
-    lcd.write_graph_to_pos(1, (15, 0));
+    lcd.write_graph_to_pos(0, (15, 0));
     lcd.delay_ms(1_000);
+    // although we define diamond shape as index 1 above,
+    // but since we define shape in 5x11 Font, and read as 5x8 Font, the actual index should be 1*2 = 2.
     lcd.write_graph_to_pos(2, (15, 1));
 
     // to test read from DDRAM
@@ -147,6 +167,18 @@ fn main() -> ! {
         lcd.delay_ms(500);
         lcd.set_backlight(State::On);
     }
+
+    // Set the font to Font5x11, and clean screen, and write a few words.
+    lcd.delay_ms(1_000);
+    lcd.set_line_mode(lcd1602_driver::command::LineMode::OneLine);
+    lcd.set_font(lcd1602_driver::command::Font::Font5x11);
+    lcd.clean_display();
+    lcd.return_home();
+    lcd.set_cursor_blink_state(State::On);
+
+    lcd.write_graph_to_cur(0);
+    lcd.typewriter_write("Hello, BigFont", 200_000);
+    lcd.write_graph_to_cur(1);
 
     #[allow(clippy::empty_loop)]
     loop {}

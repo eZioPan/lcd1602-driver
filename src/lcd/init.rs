@@ -11,6 +11,10 @@ use crate::{
 #[derive(Default)]
 pub struct Config {
     state: LcdState,
+
+    // This two state is for automatic correction
+    font_set_by_user: Option<Font>,
+    line_mode_set_by_user: Option<LineMode>,
 }
 
 #[allow(missing_docs)]
@@ -37,8 +41,16 @@ impl Config {
         self.state.get_line_mode()
     }
 
-    pub fn set_line_mode(mut self, line: LineMode) -> Self {
-        self.state.set_line_mode(line);
+    pub fn set_line_mode(mut self, line_mode: LineMode) -> Self {
+        self.line_mode_set_by_user = Some(line_mode);
+
+        // automatically Font & LineMode compatible check
+        self.state.set_font(match line_mode {
+            LineMode::OneLine => self.font_set_by_user.unwrap_or_default(),
+            LineMode::TwoLine => Font::Font5x8,
+        });
+
+        self.state.set_line_mode(line_mode);
         self
     }
 
@@ -51,6 +63,14 @@ impl Config {
     }
 
     pub fn set_font(mut self, font: Font) -> Self {
+        self.font_set_by_user = Some(font);
+
+        // automatically Font & LineMode compatible check
+        self.state.set_line_mode(match font {
+            Font::Font5x8 => self.line_mode_set_by_user.unwrap_or_default(),
+            Font::Font5x11 => LineMode::OneLine,
+        });
+
         self.state.set_font(font);
         self
     }
@@ -128,121 +148,110 @@ impl Config {
     }
 }
 
-fn lcd_init<'a, 'b, Sender, Delayer, const READABLE: bool>(
-    sender: &'a mut Sender,
-    delayer: &'b mut Delayer,
-    config: Config,
-    poll_interval_us: u32,
-) -> Lcd<'a, 'b, Sender, Delayer, READABLE>
+impl<'a, 'b, Sender, Delayer, const READABLE: bool> Lcd<'a, 'b, Sender, Delayer, READABLE>
 where
     Sender: SendCommand<Delayer, READABLE>,
     Delayer: DelayNs,
 {
-    let state = config.state;
-
-    // in initialization process, we'd better use "raw command", to strictly follow datasheet
-
-    // only first 2 or 3 commands are different between 4 pin and 8 pin mode
-    match state.get_data_width() {
-        DataWidth::Bit4 => {
-            sender.delay_and_send(CommandSet::HalfFunctionSet.into(), delayer, 40_000);
-
-            sender.delay_and_send(
-                CommandSet::FunctionSet(DataWidth::Bit4, state.get_line_mode(), state.get_font())
-                    .into(),
-                delayer,
-                40,
-            );
-
-            sender.delay_and_send(
-                CommandSet::FunctionSet(DataWidth::Bit4, state.get_line_mode(), state.get_font())
-                    .into(),
-                delayer,
-                40,
-            );
-        }
-
-        DataWidth::Bit8 => {
-            sender.delay_and_send(
-                CommandSet::FunctionSet(DataWidth::Bit8, state.get_line_mode(), state.get_font())
-                    .into(),
-                delayer,
-                40_000,
-            );
-
-            sender.delay_and_send(
-                CommandSet::FunctionSet(DataWidth::Bit8, state.get_line_mode(), state.get_font())
-                    .into(),
-                delayer,
-                40,
-            );
-        }
-    }
-
-    sender.wait_and_send(
-        CommandSet::DisplayOnOff {
-            display: state.get_display_state(),
-            cursor: state.get_cursor_state(),
-            cursor_blink: state.get_cursor_blink(),
-        }
-        .into(),
-        delayer,
-        poll_interval_us,
-    );
-
-    sender.wait_and_send(CommandSet::ClearDisplay.into(), delayer, poll_interval_us);
-
-    // Accroding to ST6077U datasheet, after CommandSet::ClearDisplay we will need to manually
-    // wait at least 1.52 ms before send CommandSet::EntryModeSet
-    // This only needs to happen if we don't know when the command finishes (aka not readable)
-    if !READABLE {
-        delayer.delay_us(1520);
-    }
-
-    sender.wait_and_send(
-        CommandSet::EntryModeSet(state.get_direction(), state.get_shift_type()).into(),
-        delayer,
-        poll_interval_us,
-    );
-
-    // set backlight after LCD init
-    sender.set_backlight(state.get_backlight());
-
-    Lcd {
-        sender,
-        delayer,
-        state,
-        poll_interval_us,
-    }
-}
-
-impl<'a, 'b, Sender, Delayer> Lcd<'a, 'b, Sender, Delayer, false>
-where
-    Sender: SendCommand<Delayer, false>,
-    Delayer: DelayNs,
-{
     /// Create a [`Lcd`] driver, and init LCD hardware
-    pub fn new_write_only(
-        sender: &'a mut Sender,
-        delayer: &'b mut Delayer,
-        config: Config,
-    ) -> Self {
-        lcd_init(sender, delayer, config, 0)
-    }
-}
-
-impl<'a, 'b, Sender, Delayer> Lcd<'a, 'b, Sender, Delayer, true>
-where
-    Sender: SendCommand<Delayer, true>,
-    Delayer: DelayNs,
-{
-    /// Create a [`Lcd`] driver, and init LCD hardware
+    ///
+    /// If we don't specify `poll_interval_us`,  
+    /// then default value will be 40 us for Write-Only mode, and 10 us for Read-Write mode
     pub fn new(
         sender: &'a mut Sender,
         delayer: &'b mut Delayer,
         config: Config,
-        poll_interval_us: u32,
+        poll_interval_us: Option<u32>,
     ) -> Self {
-        lcd_init(sender, delayer, config, poll_interval_us)
+        let poll_interval_us = if !READABLE {
+            poll_interval_us.unwrap_or_default().max(40)
+        } else {
+            poll_interval_us.unwrap_or_default().max(10)
+        };
+
+        let state = config.state;
+
+        // in initialization process, we'd better use "raw command", to strictly follow datasheet
+
+        // only first 2 or 3 commands are different between 4 pin and 8 pin mode
+        match state.get_data_width() {
+            DataWidth::Bit4 => {
+                sender.delay_and_send(
+                    CommandSet::HalfFunctionSet,
+                    delayer,
+                    poll_interval_us.max(40_000),
+                );
+
+                sender.delay_and_send(
+                    CommandSet::FunctionSet(
+                        DataWidth::Bit4,
+                        state.get_line_mode(),
+                        state.get_font(),
+                    ),
+                    delayer,
+                    poll_interval_us,
+                );
+
+                sender.delay_and_send(
+                    CommandSet::FunctionSet(
+                        DataWidth::Bit4,
+                        state.get_line_mode(),
+                        state.get_font(),
+                    ),
+                    delayer,
+                    poll_interval_us,
+                );
+            }
+
+            DataWidth::Bit8 => {
+                sender.delay_and_send(
+                    CommandSet::FunctionSet(
+                        DataWidth::Bit8,
+                        state.get_line_mode(),
+                        state.get_font(),
+                    ),
+                    delayer,
+                    poll_interval_us.max(40_000),
+                );
+
+                sender.delay_and_send(
+                    CommandSet::FunctionSet(
+                        DataWidth::Bit8,
+                        state.get_line_mode(),
+                        state.get_font(),
+                    ),
+                    delayer,
+                    poll_interval_us,
+                );
+            }
+        }
+
+        sender.wait_and_send(
+            CommandSet::DisplayOnOff {
+                display: state.get_display_state(),
+                cursor: state.get_cursor_state(),
+                cursor_blink: state.get_cursor_blink(),
+            },
+            delayer,
+            poll_interval_us,
+        );
+
+        sender.wait_and_send(CommandSet::ClearDisplay, delayer, poll_interval_us);
+
+        sender.wait_and_send(
+            CommandSet::EntryModeSet(state.get_direction(), state.get_shift_type()),
+            delayer,
+            poll_interval_us,
+        );
+
+        // set backlight after LCD init
+        sender.set_actual_backlight(state.get_backlight());
+
+        Lcd {
+            sender,
+            delayer,
+            state,
+            poll_interval_us,
+        }
     }
 }

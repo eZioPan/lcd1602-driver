@@ -1,10 +1,10 @@
 use embedded_hal::delay::DelayNs;
 
-use crate::command::{DataWidth, Font, LineMode, MoveDirection, RAMType, ShiftType};
+use crate::command::{Font, LineMode, MoveDirection, RAMType, ShiftType};
 use crate::sender::SendCommand;
 use crate::{command::CommandSet, lcd::State};
 
-use super::{Anim, Basic, BasicRead, Ext, ExtRead, Lcd};
+use super::{Anim, Basic, BasicRead, CGRAMGraph, Ext, ExtRead, Lcd};
 
 impl<'a, 'b, Sender, Delayer, const READABLE: bool> Basic for Lcd<'a, 'b, Sender, Delayer, READABLE>
 where
@@ -12,27 +12,27 @@ where
     Delayer: DelayNs,
 {
     fn set_backlight(&mut self, backlight: State) {
-        self.sender.set_backlight(backlight);
+        self.sender.set_actual_backlight(backlight);
         self.state.set_backlight(backlight);
     }
 
-    fn get_backlight(self) -> State {
+    fn get_backlight(&self) -> State {
         self.state.get_backlight()
     }
 
-    fn write_u8_to_cur(&mut self, byte: u8) {
+    fn write_byte_to_cur(&mut self, byte: u8) {
         assert!(
             self.get_ram_type() == RAMType::DDRam,
             "Current in CGRAM, use .set_cursor_pos() to change to DDRAM"
         );
 
         self.sender.wait_and_send(
-            CommandSet::WriteDataToRAM(byte).into(),
+            CommandSet::WriteDataToRAM(byte),
             self.delayer,
             self.poll_interval_us,
         );
 
-        // since AC of UT7066U will automaticlly increase, we only need to update LCD struct
+        // since AC of UT7066U will automatically increase, we only need to update LCD struct
         // since RAM of UT7066U is looped, we need to mimic it
         let last_pos = self.get_cursor_pos();
         let line_capacity = self.get_line_capacity();
@@ -79,68 +79,96 @@ where
                 }
             },
         };
-        self.set_cursor_pos(raw_pos);
+        self.state.set_cursor_pos(raw_pos);
     }
 
-    fn write_graph_to_cgram(&mut self, index: u8, graph_data: &[u8; 8]) {
-        assert!(index < 8, "Only 8 graphs allowed in CGRAM");
+    fn write_graph_to_cgram(&mut self, index: u8, graph_data: &CGRAMGraph) {
+        if graph_data.lower.is_some() {
+            assert!(index < 4, "Only 4 graphs allowed in CGRAM for 5x11 Font")
+        } else {
+            assert!(index < 8, "Only 8 graphs allowed in CGRAM for 5x8 Font")
+        }
 
         assert!(
-            graph_data.iter().all(|&line| line < 2u8.pow(5)),
-            "Only lower 5 bits use to construct display"
+            graph_data.upper.iter().all(|&line| line < 2u8.pow(5)),
+            "Only lower 5 bits use to construct the graph"
         );
+
+        if let Some(graph_data_lower) = graph_data.lower {
+            assert!(
+                graph_data_lower.iter().all(|&line| line < 2u8.pow(5)),
+                "Only lower 5 bits use to construct the graph"
+            );
+        }
 
         // if DDRAM is write from right to left, then when we change to CGRAM, graph will write from lower to upper
         // we will change it to left to right, to make writing correct
-        let mut direction_fliped = false;
-        if self.get_direction() == MoveDirection::RightToLeft {
+        let direction_flipped = if self.get_direction() == MoveDirection::RightToLeft {
             self.set_direction(MoveDirection::LeftToRight);
-            direction_fliped = true;
-        }
+            true
+        } else {
+            false
+        };
 
-        let cgram_data_addr_start = index.checked_shl(3).unwrap();
+        // index is convert to high 3 bits of CGRAM address
+        self.set_cgram_addr(
+            index
+                .checked_shl(match graph_data.lower {
+                    None => 3,
+                    Some(_) => 4,
+                })
+                .unwrap(),
+        );
 
-        self.set_cgram_addr(cgram_data_addr_start);
-        graph_data.iter().for_each(|&line_data| {
+        graph_data.upper.iter().for_each(|&line_data| {
             self.sender.wait_and_send(
-                CommandSet::WriteDataToRAM(line_data).into(),
+                CommandSet::WriteDataToRAM(line_data),
                 self.delayer,
                 self.poll_interval_us,
             );
         });
 
-        // if writing direction is changed, then change it back
-        if direction_fliped {
+        if let Some(graph_data_lower) = graph_data.lower {
+            graph_data_lower.iter().for_each(|&line_data| {
+                self.sender.wait_and_send(
+                    CommandSet::WriteDataToRAM(line_data),
+                    self.delayer,
+                    self.poll_interval_us,
+                );
+            });
+        }
+
+        // if writing direction is changed, then restore it
+        if direction_flipped {
             self.set_direction(MoveDirection::RightToLeft)
         }
     }
 
-    fn write_graph_to_cur(&mut self, index: u8) {
-        assert!(index < 8, "Only 8 graphs allowed in CGRAM");
-        self.write_u8_to_cur(index);
-    }
-
     fn clean_display(&mut self) {
         self.sender.wait_and_send(
-            CommandSet::ClearDisplay.into(),
+            CommandSet::ClearDisplay,
             self.delayer,
             self.poll_interval_us,
         );
     }
 
     fn return_home(&mut self) {
-        self.sender.wait_and_send(
-            CommandSet::ReturnHome.into(),
-            self.delayer,
-            self.poll_interval_us,
-        );
+        self.state.set_cursor_pos((0, 0));
+        self.state.set_display_offset(0);
+
+        self.sender
+            .wait_and_send(CommandSet::ReturnHome, self.delayer, self.poll_interval_us);
     }
 
     fn set_line_mode(&mut self, line: LineMode) {
         self.state.set_line_mode(line);
 
         self.sender.wait_and_send(
-            CommandSet::FunctionSet(DataWidth::Bit4, self.get_line_mode(), self.get_font()).into(),
+            CommandSet::FunctionSet(
+                self.state.get_data_width(),
+                self.get_line_mode(),
+                self.get_font(),
+            ),
             self.delayer,
             self.poll_interval_us,
         );
@@ -154,7 +182,11 @@ where
         self.state.set_font(font);
 
         self.sender.wait_and_send(
-            CommandSet::FunctionSet(DataWidth::Bit4, self.get_line_mode(), self.get_font()).into(),
+            CommandSet::FunctionSet(
+                self.state.get_data_width(),
+                self.get_line_mode(),
+                self.get_font(),
+            ),
             self.delayer,
             self.poll_interval_us,
         );
@@ -170,8 +202,7 @@ where
                 display: self.get_display_state(),
                 cursor: self.get_cursor_state(),
                 cursor_blink: self.get_cursor_blink_state(),
-            }
-            .into(),
+            },
             self.delayer,
             self.poll_interval_us,
         );
@@ -187,8 +218,7 @@ where
                 display: self.get_display_state(),
                 cursor: self.get_cursor_state(),
                 cursor_blink: self.get_cursor_blink_state(),
-            }
-            .into(),
+            },
             self.delayer,
             self.poll_interval_us,
         );
@@ -207,8 +237,7 @@ where
                 display: self.get_display_state(),
                 cursor: self.get_cursor_state(),
                 cursor_blink: self.get_cursor_blink_state(),
-            }
-            .into(),
+            },
             self.delayer,
             self.poll_interval_us,
         );
@@ -220,7 +249,7 @@ where
         self.state.set_direction(dir);
 
         self.sender.wait_and_send(
-            CommandSet::EntryModeSet(self.get_direction(), self.get_shift_type()).into(),
+            CommandSet::EntryModeSet(self.get_direction(), self.get_shift_type()),
             self.delayer,
             self.poll_interval_us,
         );
@@ -232,7 +261,7 @@ where
         self.state.set_shift_type(shift);
 
         self.sender.wait_and_send(
-            CommandSet::EntryModeSet(self.get_direction(), self.get_shift_type()).into(),
+            CommandSet::EntryModeSet(self.get_direction(), self.get_shift_type()),
             self.delayer,
             self.poll_interval_us,
         );
@@ -249,7 +278,7 @@ where
         let raw_pos: u8 = pos.1 * 0x40 + pos.0;
 
         self.sender.wait_and_send(
-            CommandSet::SetDDRAM(raw_pos).into(),
+            CommandSet::SetDDRAM(raw_pos),
             self.delayer,
             self.poll_interval_us,
         );
@@ -260,7 +289,7 @@ where
         self.state.set_ram_type(RAMType::CGRam);
 
         self.sender.wait_and_send(
-            CommandSet::SetCGRAM(addr).into(),
+            CommandSet::SetCGRAM(addr),
             self.delayer,
             self.poll_interval_us,
         );
@@ -272,7 +301,7 @@ where
         self.state.shift_cursor_or_display(shift_type, dir);
 
         self.sender.wait_and_send(
-            CommandSet::CursorOrDisplayShift(shift_type, dir).into(),
+            CommandSet::CursorOrDisplayShift(shift_type, dir),
             self.delayer,
             self.poll_interval_us,
         );
@@ -314,7 +343,7 @@ where
     fn read_u8_from_cur(&mut self) -> u8 {
         self.sender
             .wait_and_send(
-                CommandSet::ReadDataFromRAM.into(),
+                CommandSet::ReadDataFromRAM,
                 self.delayer,
                 self.poll_interval_us,
             )

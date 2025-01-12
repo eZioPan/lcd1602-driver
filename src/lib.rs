@@ -4,16 +4,14 @@
 Basic Usage:
 
 1. Initialize a "sender" <br/>
-    This crate include 2 drvier:
+    This crate include 2 driver:
     * 4-pin/8-pin parallel driver [`sender::ParallelSender`]
-    * I2C driver with a seperate adapter board [`sender::I2cSender`]
+    * I2C driver with a separate adapter board [`sender::I2cSender`]
 
     You can choose either of it, or you can use any driver implemented [`sender::SendCommand`].
-<br/>
-<br/>
+
 2. Use [`lcd::Lcd::new()`] to create a [`lcd::Lcd`], and initialize LCD1602 hardware
-<br/>
-<br/>
+
 3. use any methods provide by [`lcd::Lcd`] to control LCD1602
 */
 

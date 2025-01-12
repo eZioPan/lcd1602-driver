@@ -2,9 +2,10 @@
 
 use crate::utils::BitOps;
 
-// It contain all commands from LCD1602 datasheet
-#[derive(Clone, Copy)]
-pub(crate) enum CommandSet {
+/// It contain all commands from LCD1602 datasheet
+#[derive(Clone, Copy, PartialEq)]
+#[allow(missing_docs)]
+pub enum CommandSet {
     ClearDisplay,
     ReturnHome,
     EntryModeSet(MoveDirection, ShiftType),
@@ -14,9 +15,9 @@ pub(crate) enum CommandSet {
         cursor_blink: State,
     },
     CursorOrDisplayShift(ShiftType, MoveDirection),
-    // This is not a command from datasheet.
-    // It's the first (half) command of 4 pin mode
-    // we name it, to make things tidy
+    /// This is not a command from datasheet.  
+    /// It's the first (half) command of 4 pin mode  
+    /// we name it, to make things tidy
     HalfFunctionSet,
     FunctionSet(DataWidth, LineMode, Font),
     SetCGRAM(u8),
@@ -37,7 +38,7 @@ pub enum MoveDirection {
 }
 
 /// [`ShiftType`] defines the movement is cursor only or both cursor and display window
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, PartialEq)]
 pub enum ShiftType {
     #[allow(missing_docs)]
     #[default]
@@ -58,7 +59,7 @@ pub enum State {
 
 /// [`DataWidth`] defines data width of a [`Command`]  
 /// Should match current Sender's pin config
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, PartialEq)]
 pub enum DataWidth {
     #[allow(missing_docs)]
     #[default]
