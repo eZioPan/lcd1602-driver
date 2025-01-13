@@ -12,6 +12,7 @@ The most common functions have been implemented, but this crate is still in a **
 ## Features
 
 - Support both parallel interface, and I2C adapter board interface
+- Support Write-Only control mode
 - Covers every(?) instruction of the LCD1602
   - 4 Pin / 8 Pin mode
   - 1 line / 2 line display
@@ -40,18 +41,32 @@ The most common functions have been implemented, but this crate is still in a **
   - Split-flap-style string display (one by one/simultaneously)
 - And more...
 
+## Minimum Supported Rust Version (MSRV)
+
+1.81
+
 ## Examples
 
 See [examples/demo_with_stm32f411](https://github.com/eZioPan/lcd1602-driver/tree/latest/examples/demo_with_stm32f411)
 
 ## CHANGELOG
 
-### v0.1.0
+### v0.3.0
 
-- First Release
+- Add Write-Only control mode. [@ImTheSquid](https://github.com/ImTheSquid)
+- Support custom 5x11 Font graph
+- Rename `write_u8_to_cur()` to `write_byte_to_cur()`
+- Add sufficient delay after **ClearDisplay** and **ReturnHome** command
+- Properly handle cross check between LineMode and Font
+- Automatically update LineMode and Font in Config when either of them changed
+- Other bugs fix
 
 ### v0.2.0
 
 - Upgrade to embedded-hal 1.0
 - Add I2C adapter board support
 - Simplify codebase
+
+### v0.1.0
+
+- First Release
