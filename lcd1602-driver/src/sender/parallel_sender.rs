@@ -161,10 +161,12 @@ where
             .enumerate()
             .for_each(|(index, pin)| match raw_bits.check_bit(index as u8) {
                 BitState::Set => {
-                    pin.set_high().ok().unwrap();
+                    pin.set_high()
+                        .expect("Failed to set data pin HIGH");
                 }
                 BitState::Clear => {
-                    pin.set_low().ok().unwrap();
+                    pin.set_low()
+                        .expect("Failed to set data pin LOW");
                 }
             });
     }
@@ -185,7 +187,8 @@ where
             // use .fold() to change same value in different iteration
             .fold(0u8, |mut acc, (index, pin)| {
                 // in open drain mode, set pin high to release control
-                pin.set_high().ok().unwrap();
+                pin.set_high()
+                    .expect("Failed to release data pin (set HIGH)");
                 // it's incorrect to use .get_state() here, which return what we want to put pin in, rather what pin real state
                 match pin.is_low() {
                     Ok(val) => match val {
@@ -203,7 +206,7 @@ macro_rules! backlight_fns {
     () => {
         fn get_actual_backlight(&mut self) -> State {
             match self.bl_pin.as_mut() {
-                Some(bl_pin) => match bl_pin.is_set_high().unwrap() {
+                Some(bl_pin) => match bl_pin.is_set_high().expect("Failed to read backlight pin state") {
                     true => State::On,
                     false => State::Off,
                 },
@@ -214,8 +217,8 @@ macro_rules! backlight_fns {
         fn set_actual_backlight(&mut self, backlight: State) {
             if let Some(bl_pin) = self.bl_pin.as_mut() {
                 match backlight {
-                    State::Off => bl_pin.set_low().unwrap(),
-                    State::On => bl_pin.set_high().unwrap(),
+                    State::Off => bl_pin.set_low().expect("Failed to set backlight pin LOW"),
+                    State::On => bl_pin.set_high().expect("Failed to set backlight pin HIGH"),
                 }
             }
         }
@@ -238,14 +241,14 @@ where
             "Pins other than 4 or 8 are not supported"
         );
 
-        self.en_pin.set_low().ok().unwrap();
+        self.en_pin.set_low().expect("Failed to set EN pin LOW");
 
         match command.get_register_selection() {
             RegisterSelection::Command => {
-                self.rs_pin.set_low().ok().unwrap();
+                self.rs_pin.set_low().expect("Failed to set RS pin LOW");
             }
             RegisterSelection::Data => {
-                self.rs_pin.set_high().ok().unwrap();
+                self.rs_pin.set_high().expect("Failed to set RS pin HIGH");
             }
         }
 
@@ -253,10 +256,10 @@ where
             let rw_pin = self.rw_pin.as_mut().expect("RW pin for readable");
             match command.get_read_write_op() {
                 ReadWriteOp::Write => {
-                    rw_pin.set_low().ok().unwrap();
+                    rw_pin.set_low().expect("Failed to set RW pin LOW");
                 }
                 ReadWriteOp::Read => {
-                    rw_pin.set_high().ok().unwrap();
+                    rw_pin.set_high().expect("Failed to set RW pin HIGH");
                 }
             }
         }
@@ -271,24 +274,24 @@ where
                         Bits::Bit4(raw_bits) => {
                             assert!(raw_bits < 2u8.pow(4), "data is greater than 4 bits");
                             self.push_bits(raw_bits);
-                            self.en_pin.set_high().ok().unwrap();
-                            self.en_pin.set_low().ok().unwrap();
+                            self.en_pin.set_high().expect("Failed to set EN pin HIGH");
+                            self.en_pin.set_low().expect("Failed to set EN pin LOW");
                         }
                         Bits::Bit8(raw_bits) => {
                             self.push_bits(raw_bits >> 4);
-                            self.en_pin.set_high().ok().unwrap();
-                            self.en_pin.set_low().ok().unwrap();
+                            self.en_pin.set_high().expect("Failed to set EN pin HIGH");
+                            self.en_pin.set_low().expect("Failed to set EN pin LOW");
                             self.push_bits(raw_bits & 0b1111);
-                            self.en_pin.set_high().ok().unwrap();
-                            self.en_pin.set_low().ok().unwrap();
+                            self.en_pin.set_high().expect("Failed to set EN pin HIGH");
+                            self.en_pin.set_low().expect("Failed to set EN pin LOW");
                         }
                     },
 
                     8 => {
                         if let Bits::Bit8(raw_bits) = bits {
                             self.push_bits(raw_bits);
-                            self.en_pin.set_high().ok().unwrap();
-                            self.en_pin.set_low().ok().unwrap();
+                            self.en_pin.set_high().expect("Failed to set EN pin HIGH");
+                            self.en_pin.set_low().expect("Failed to set EN pin LOW");
                         } else {
                             panic!("in 8 pin mode, data should always be 8 bit")
                         }
@@ -301,19 +304,19 @@ where
             }
             ReadWriteOp::Read => match PIN_CNT {
                 4 => {
-                    self.en_pin.set_high().ok().unwrap();
-                    let high_4_bits = self.fetch_bits().checked_shl(4).unwrap();
-                    self.en_pin.set_low().ok().unwrap();
-                    self.en_pin.set_high().ok().unwrap();
+                    self.en_pin.set_high().expect("Failed to set EN pin HIGH");
+                    let high_4_bits = self.fetch_bits().checked_shl(4).expect("Failed to shift bits");
+                    self.en_pin.set_low().expect("Failed to set EN pin LOW");
+                    self.en_pin.set_high().expect("Failed to set EN pin HIGH");
                     let low_4_bits = self.fetch_bits();
-                    self.en_pin.set_low().ok().unwrap();
+                    self.en_pin.set_low().expect("Failed to set EN pin LOW");
                     Some(high_4_bits + low_4_bits)
                 }
 
                 8 => {
-                    self.en_pin.set_high().ok().unwrap();
+                    self.en_pin.set_high().expect("Failed to set EN pin HIGH");
                     let bits = self.fetch_bits();
-                    self.en_pin.set_low().ok().unwrap();
+                    self.en_pin.set_low().expect("Failed to set EN pin LOW");
                     Some(bits)
                 }
 
@@ -339,14 +342,14 @@ where
             "Pins other than 4 or 8 are not supported"
         );
 
-        self.en_pin.set_low().ok().unwrap();
+        self.en_pin.set_low().expect("Failed to set EN pin LOW");
 
         match command.get_register_selection() {
             RegisterSelection::Command => {
-                self.rs_pin.set_low().ok().unwrap();
+                self.rs_pin.set_low().expect("Failed to set RS pin LOW");
             }
             RegisterSelection::Data => {
-                self.rs_pin.set_high().ok().unwrap();
+                self.rs_pin.set_high().expect("Failed to set RS pin HIGH");
             }
         }
 
@@ -360,24 +363,24 @@ where
                         Bits::Bit4(raw_bits) => {
                             assert!(raw_bits < 2u8.pow(4), "data is greater than 4 bits");
                             self.push_bits(raw_bits);
-                            self.en_pin.set_high().ok().unwrap();
-                            self.en_pin.set_low().ok().unwrap();
+                            self.en_pin.set_high().expect("Failed to set EN pin HIGH");
+                            self.en_pin.set_low().expect("Failed to set EN pin LOW");
                         }
                         Bits::Bit8(raw_bits) => {
                             self.push_bits(raw_bits >> 4);
-                            self.en_pin.set_high().ok().unwrap();
-                            self.en_pin.set_low().ok().unwrap();
+                            self.en_pin.set_high().expect("Failed to set EN pin HIGH");
+                            self.en_pin.set_low().expect("Failed to set EN pin LOW");
                             self.push_bits(raw_bits & 0b1111);
-                            self.en_pin.set_high().ok().unwrap();
-                            self.en_pin.set_low().ok().unwrap();
+                            self.en_pin.set_high().expect("Failed to set EN pin HIGH");
+                            self.en_pin.set_low().expect("Failed to set EN pin LOW");
                         }
                     },
 
                     8 => {
                         if let Bits::Bit8(raw_bits) = bits {
                             self.push_bits(raw_bits);
-                            self.en_pin.set_high().ok().unwrap();
-                            self.en_pin.set_low().ok().unwrap();
+                            self.en_pin.set_high().expect("Failed to set EN pin HIGH");
+                            self.en_pin.set_low().expect("Failed to set EN pin LOW");
                         } else {
                             panic!("in 8 pin mode, data should always be 8 bit")
                         }

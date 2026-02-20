@@ -3,7 +3,7 @@
 /// The state of a bit,
 /// It's either [`BitState::Clear`] to represent a 0
 /// or [`BitState::Set`] to represent a 1
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 pub enum BitState {
     /// Bit is 0
     Clear,
@@ -37,7 +37,12 @@ impl BitOps for u8 {
     fn check_bit(&self, pos: u8) -> BitState {
         assert!(pos <= 7, "bit offset larger than 7");
 
-        match self.checked_shr(pos as u32).unwrap() & 1 == 1 {
+        match self
+            .checked_shr(pos as u32)
+            .expect("Shift position out of bounds")
+            & 1
+            == 1
+        {
             true => BitState::Set,
             false => BitState::Clear,
         }

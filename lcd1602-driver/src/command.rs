@@ -28,7 +28,7 @@ pub enum CommandSet {
 }
 
 /// [`MoveDirection`] defines the cursor and display window move direction
-#[derive(Clone, Copy, PartialEq, Default)]
+#[derive(Clone, Copy, PartialEq, Default, Debug)]
 pub enum MoveDirection {
     #[allow(missing_docs)]
     RightToLeft,
@@ -38,7 +38,7 @@ pub enum MoveDirection {
 }
 
 /// [`ShiftType`] defines the movement is cursor only or both cursor and display window
-#[derive(Clone, Copy, Default, PartialEq)]
+#[derive(Clone, Copy, Default, PartialEq, Debug)]
 pub enum ShiftType {
     #[allow(missing_docs)]
     #[default]
@@ -48,7 +48,7 @@ pub enum ShiftType {
 }
 
 /// [`State`] defines a On/Off state
-#[derive(Clone, Copy, PartialEq, Default)]
+#[derive(Clone, Copy, PartialEq, Default, Debug)]
 pub enum State {
     #[allow(missing_docs)]
     Off,
@@ -57,9 +57,9 @@ pub enum State {
     On,
 }
 
-/// [`DataWidth`] defines data width of a [`Command`]  
+/// [`DataWidth`] defines data width of a [`Command`]
 /// Should match current Sender's pin config
-#[derive(Clone, Copy, Default, PartialEq)]
+#[derive(Clone, Copy, Default, PartialEq, Debug)]
 pub enum DataWidth {
     #[allow(missing_docs)]
     #[default]
@@ -69,7 +69,7 @@ pub enum DataWidth {
 }
 
 /// [`LineMode`] is current LCD display line count
-#[derive(Clone, Copy, Default, PartialEq)]
+#[derive(Clone, Copy, Default, PartialEq, Debug)]
 pub enum LineMode {
     #[allow(missing_docs)]
     OneLine,
@@ -79,7 +79,7 @@ pub enum LineMode {
 }
 
 /// [`Font`] is current display font
-#[derive(Clone, Copy, Default, PartialEq)]
+#[derive(Clone, Copy, Default, PartialEq, Debug)]
 pub enum Font {
     #[allow(missing_docs)]
     #[default]
@@ -89,7 +89,7 @@ pub enum Font {
 }
 
 /// [`RAMType`] is the type of memory to access
-#[derive(Clone, Copy, Default, PartialEq)]
+#[derive(Clone, Copy, Default, PartialEq, Debug)]
 pub enum RAMType {
     /// Display Data RAM
     #[default]

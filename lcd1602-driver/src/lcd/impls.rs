@@ -117,7 +117,7 @@ where
                     None => 3,
                     Some(_) => 4,
                 })
-                .unwrap(),
+                .expect("CGRAM index shift overflow"),
         );
 
         graph_data.upper.iter().for_each(|&line_data| {
@@ -347,7 +347,7 @@ where
                 self.delayer,
                 self.poll_interval_us,
             )
-            .unwrap()
+            .expect("Failed to read data from LCD (write-only mode)")
     }
 }
 

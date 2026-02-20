@@ -63,14 +63,18 @@ where
             State::Off => i2c_raw_seq.clear_bit(3),
         };
 
-        self.i2c.write(self.addr.clone(), &[i2c_raw_seq]).unwrap();
+        self.i2c
+            .write(self.addr.clone(), &[i2c_raw_seq])
+            .expect("Failed to write backlight state to I2C");
         self.backlight_state = state;
     }
 
     fn get_actual_backlight(&mut self) -> State {
         let mut buf = [0u8];
         // just a read is sufficient get backlight state
-        self.i2c.read(self.addr.clone(), &mut buf).unwrap();
+        self.i2c
+            .read(self.addr.clone(), &mut buf)
+            .expect("Failed to read backlight state from I2C");
         match buf[0].check_bit(3) {
             BitState::Clear => State::Off,
             BitState::Set => State::On,
@@ -84,7 +88,7 @@ where
                 "first command should has some data to write"
             );
 
-            match lcd_command.get_data().unwrap() {
+            match lcd_command.get_data().expect("First command data missing") {
                 Bits::Bit8(_) => panic!("first command should be 4 bit"),
 
                 Bits::Bit4(_) => {
@@ -99,7 +103,7 @@ where
 
                     self.i2c
                         .write(self.addr.clone(), &raw_seq[0..len as usize])
-                        .unwrap();
+                        .expect("Failed to write first command to I2C");
                 }
             }
 
@@ -119,7 +123,7 @@ where
                     );
 
                     if lcd_command.get_register_selection() == RegisterSelection::Command {
-                        match lcd_command.get_data().unwrap() {
+                        match lcd_command.get_data().expect("Command data missing") {
                             Bits::Bit8(lcd_command_data) => {
                                 if (lcd_command_data >> 4) == 0b0011 {
                                     panic!("This I2C driver doesn't support 8 bit Data Width Mode")
@@ -133,7 +137,7 @@ where
                     let I2cRawSeq(len, raw_seq) = i2c_command.into();
                     self.i2c
                         .write(self.addr.clone(), &raw_seq[0..len as usize])
-                        .unwrap();
+                        .expect("Failed to write command to I2C");
                 }
 
                 ReadWriteOp::Read => {
@@ -156,13 +160,15 @@ where
 
                     self.i2c
                         .write_read(self.addr.clone(), &raw_seq[0..2], &mut buf)
-                        .unwrap();
+                        .expect("Failed to write_read I2C (first half)");
                     concat_buf[0] = buf[0];
 
                     self.i2c
                         .write_read(self.addr.clone(), &raw_seq[2..5], &mut buf)
-                        .unwrap();
-                    self.i2c.write(self.addr.clone(), &raw_seq[5..6]).unwrap();
+                        .expect("Failed to write_read I2C (second half)");
+                    self.i2c
+                        .write(self.addr.clone(), &raw_seq[5..6])
+                        .expect("Failed to write I2C (final step)");
                     concat_buf[1] = buf[0];
 
                     // Combine 2 halves of data into a whole one.
@@ -190,7 +196,10 @@ impl Default for I2cCommand {
 impl I2cCommand {
     fn gen_i2c_cmd(lcd_command: Command, backlight_state: State) -> Self {
         let mut i2c_raw_data = I2cCommand::default();
-        let i2c_raw_data_1_inner = i2c_raw_data.1.as_mut().unwrap();
+        let i2c_raw_data_1_inner = i2c_raw_data
+            .1
+            .as_mut()
+            .expect("I2C command second byte missing");
 
         if lcd_command.get_register_selection() == RegisterSelection::Data {
             i2c_raw_data.0.set_bit(0);
@@ -260,8 +269,8 @@ impl From<I2cCommand> for I2cRawSeq {
         seq[1] = enable_0;
         seq[2] = disable_0;
 
-        if i2c_command.1.is_some() {
-            let mut disable_1 = i2c_command.1.unwrap();
+        if let Some(disable_1_val) = i2c_command.1 {
+            let mut disable_1 = disable_1_val;
             disable_1.clear_bit(2);
             let mut enable_1 = disable_1;
             enable_1.set_bit(2);

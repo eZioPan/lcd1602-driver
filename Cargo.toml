@@ -1,16 +1,3 @@
-[package]
-name = "lcd1602-driver"
-authors = ["eZioPan <eziopan@qq.com>"]
-version = "0.3.0"
-edition = "2021"
-license = "MIT OR Apache-2.0"
-description = "A LCD1602 driver"
-homepage = "https://github.com/eZioPan/lcd1602-driver"
-documentation = "https://docs.rs/lcd1602-driver"
-repository = "https://github.com/eZioPan/lcd1602-driver"
-readme = "README.md"
-categories = ["embedded", "hardware-support", "no-std"]
-keywords = ["lcd1602", "display"]
-
-[dependencies]
-embedded-hal = { version = "1" }
+[workspace]
+members = ["lcd1602-driver"]
+resolver = "2"
