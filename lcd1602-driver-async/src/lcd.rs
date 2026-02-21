@@ -1,0 +1,531 @@
+//! [`Lcd`] is the main driver for LCD1602
+
+#![allow(async_fn_in_trait)]
+
+use embedded_hal_async::delay::DelayNs;
+
+use crate::{
+    command::{Font, LineMode, MoveDirection, RAMType, ShiftType, State},
+    state::LcdState,
+};
+
+mod init;
+
+pub use init::Config;
+
+mod impls;
+
+/// [`Lcd`] is the main struct to drive a LCD1602
+pub struct Lcd<'a, Sender, Delayer, const READABLE: bool>
+where
+    Delayer: DelayNs,
+{
+    sender: &'a mut Sender,
+    delayer: Delayer,
+    state: LcdState,
+    poll_interval_us: u32,
+}
+
+/// [`CGRAMGraph`] represent a graph inside a CGRAM, that can be draw on screen
+#[derive(Default)]
+pub struct CGRAMGraph {
+    /// This is the upper part of the graph.  
+    /// It shows for both 5x8 and 5x11 Font
+    pub upper: [u8; 8],
+    /// This is the lower part of the graph.  
+    /// It shows only 5x11 Font.
+    ///
+    /// Although this part is only 3 u8, but in LCD hardware, it will occupied a full graph point.
+    pub lower: Option<[u8; 3]>,
+}
+
+/// All basic command to control LCD1602
+#[allow(missing_docs)]
+pub trait Basic {
+    async fn write_byte_to_cur(&mut self, byte: u8);
+
+    /// Note:
+    /// We allow write Font5x11 graph even under Font5x8 mode.
+    async fn write_graph_to_cgram(&mut self, index: u8, graph_data: &CGRAMGraph);
+
+    async fn clean_display(&mut self);
+
+    async fn return_home(&mut self);
+
+    async fn set_line_mode(&mut self, line: LineMode);
+
+    fn get_line_mode(&self) -> LineMode;
+
+    async fn set_font(&mut self, font: Font);
+
+    fn get_font(&self) -> Font;
+
+    async fn set_display_state(&mut self, display: State);
+
+    fn get_display_state(&self) -> State;
+
+    async fn set_cursor_state(&mut self, cursor: State);
+
+    fn get_cursor_state(&self) -> State;
+
+    fn get_ram_type(&self) -> RAMType;
+
+    async fn set_cursor_blink_state(&mut self, blink: State);
+
+    fn get_cursor_blink_state(&self) -> State;
+
+    async fn set_direction(&mut self, dir: MoveDirection);
+
+    fn get_direction(&self) -> MoveDirection;
+
+    async fn set_shift_type(&mut self, shift: ShiftType);
+
+    fn get_shift_type(&self) -> ShiftType;
+
+    async fn set_cursor_pos(&mut self, pos: (u8, u8));
+
+    async fn set_cgram_addr(&mut self, addr: u8);
+
+    fn get_cursor_pos(&self) -> (u8, u8);
+
+    async fn shift_cursor_or_display(&mut self, shift_type: ShiftType, dir: MoveDirection);
+
+    fn get_display_offset(&self) -> u8;
+
+    fn set_poll_interval(&mut self, interval_us: u32);
+
+    fn get_poll_interval_us(&self) -> u32;
+
+    fn get_line_capacity(&self) -> u8;
+
+    /// Note:
+    /// Due to driver implementation, this function may have actual effect, or not
+    async fn set_backlight(&mut self, backlight: State);
+
+    fn get_backlight(&self) -> State;
+
+    fn calculate_pos_by_offset(&self, start: (u8, u8), offset: (i8, i8)) -> (u8, u8);
+
+    /// Wait for specified milliseconds
+    async fn delay_ms(&mut self, ms: u32);
+
+    /// Wait for specified microseconds
+    async fn delay_us(&mut self, us: u32);
+}
+
+/// Basic read functions for the LCD
+#[allow(missing_docs)]
+pub trait BasicRead: Basic {
+    async fn read_u8_from_cur(&mut self) -> u8;
+}
+
+/// Useful command to control LCD1602
+pub trait Ext: Basic {
+    /// toggle entire display on and off (it doesn't toggle backlight)
+    async fn toggle_display(&mut self) {
+        match self.get_display_state() {
+            State::Off => self.set_display_state(State::On).await,
+            State::On => self.set_display_state(State::Off).await,
+        }
+    }
+
+    /// write [char] to current position
+    /// In default implementation, character only support
+    /// from ASCII 0x20 (white space) to ASCII 0x7D (`}`)
+    async fn write_char_to_cur(&mut self, char: char) {
+        assert!(
+            self.get_ram_type() == RAMType::DDRam,
+            "Current in CGRAM, use .set_cursor_pos() to change to DDRAM"
+        );
+
+        // map char out side of ASCII 0x20 and 0x7D to full rectangle
+        let out_byte = match char.is_ascii() {
+            true if (0x20 <= char as u8) && (char as u8 <= 0x7D) => char as u8,
+            _ => 0xFF,
+        };
+
+        self.write_byte_to_cur(out_byte).await;
+    }
+
+    /// write string to current position
+    async fn write_str_to_cur(&mut self, str: &str) {
+        for char in str.chars() {
+            self.write_char_to_cur(char).await;
+        }
+    }
+
+    /// write a byte to specific position
+    async fn write_byte_to_pos(&mut self, byte: u8, pos: (u8, u8)) {
+        self.set_cursor_pos(pos).await;
+
+        self.write_byte_to_cur(byte).await;
+    }
+
+    /// write a char to specific position
+    async fn write_char_to_pos(&mut self, char: char, pos: (u8, u8)) {
+        self.set_cursor_pos(pos).await;
+        self.write_char_to_cur(char).await;
+    }
+
+    /// write string to specific position
+    async fn write_str_to_pos(&mut self, str: &str, pos: (u8, u8)) {
+        self.set_cursor_pos(pos).await;
+        self.write_str_to_cur(str).await;
+    }
+
+    /// write custom graph to current position
+    ///
+    /// If you write 5x11 Font graph, but only want to access upper part of the graph in 5x8 Font mode,
+    /// you will need to shift `index` one bit left to get correct graph.
+    async fn write_graph_to_cur(&mut self, index: u8) {
+        match self.get_font() {
+            Font::Font5x8 => assert!(index < 8, "index too big, should less than 8 for 5x8 Font"),
+            Font::Font5x11 => assert!(index < 4, "index too big, should less than 4 for 5x11 Font"),
+        }
+
+        self.write_byte_to_cur(match self.get_font() {
+            Font::Font5x8 => index,
+            Font::Font5x11 => index << 1,
+        }).await;
+    }
+
+    /// write custom graph to specific position
+    ///
+    /// If you write 5x11 Font graph, but only want to access upper part of the graph in 5x8 Font mode,
+    /// you will need to shift `index` one bit left to get correct graph.
+    async fn write_graph_to_pos(&mut self, index: u8, pos: (u8, u8)) {
+        match self.get_font() {
+            Font::Font5x8 => assert!(index < 8, "Only 8 graphs allowed in CGRAM for 5x8 Font"),
+            Font::Font5x11 => assert!(index < 4, "Only 4 graphs allowed in CGRAM for 5x11 Font"),
+        }
+
+        self.write_byte_to_pos(
+            match self.get_font() {
+                Font::Font5x8 => index,
+                Font::Font5x11 => index << 1,
+            },
+            pos,
+        ).await;
+    }
+
+    /// change cursor position with relative offset
+    async fn offset_cursor_pos(&mut self, offset: (i8, i8)) {
+        self.set_cursor_pos(self.calculate_pos_by_offset(self.get_cursor_pos(), offset)).await;
+    }
+}
+
+/// Useful commands to read data from the LCD
+pub trait ExtRead: Ext + BasicRead {
+    /// read a byte from specific position
+    async fn read_byte_from_pos(&mut self, pos: (u8, u8)) -> u8 {
+        let original_pos = self.get_cursor_pos();
+        self.set_cursor_pos(pos).await;
+        let data = self.read_u8_from_cur().await;
+        self.set_cursor_pos(original_pos).await;
+        data
+    }
+
+    /// read custom graph data from CGRAM
+    ///
+    /// We always read graph data as Font 5x11 mode,
+    /// user will take response to check whether the second part is needed.
+    async fn read_graph_from_cgram(&mut self, index: u8) -> CGRAMGraph {
+        match self.get_font() {
+            Font::Font5x8 => assert!(index < 8, "index too big, should less than 8 for 5x8 Font"),
+            Font::Font5x11 => assert!(index < 4, "index too big, should less than 4 for 5x11 Font"),
+        }
+
+        // convert index to cgram address
+        self.set_cgram_addr(
+            index
+                .checked_shl(match self.get_font() {
+                    Font::Font5x8 => 3,
+                    Font::Font5x11 => 4,
+                })
+                .unwrap(),
+        ).await;
+
+        let mut graph = CGRAMGraph::default();
+
+        for line in graph.upper.iter_mut() {
+            *line = self.read_u8_from_cur().await;
+        }
+
+        graph.lower = Some([0u8; 3]);
+
+        for line in graph.lower.as_mut().unwrap().iter_mut() {
+            *line = self.read_u8_from_cur().await;
+        }
+
+        graph
+    }
+}
+
+/// The style of the offset display window
+pub enum MoveStyle {
+    /// Always move to left
+    ForceMoveLeft,
+    /// Always move to right
+    ForceMoveRight,
+    /// Top left of display window won't cross display boundary
+    NoCrossBoundary,
+    /// Automatic find the shortest path
+    Shortest,
+}
+
+/// The flip style of split flap display
+pub enum FlipStyle {
+    /// Flip first character to target character, then flip next one
+    Sequential,
+    /// Flip all characters at once, automatically stop when the characters reach the target one
+    Simultaneous,
+}
+
+/// Show animation on LCD1602
+pub trait Anim: Ext {
+    /// Make the entire screen blink
+    ///
+    /// # Arguments
+    ///
+    /// * `count` - the number of times to blink the screen. If the value is `0`, the screen will blink endless.
+    /// * `interval_us` - The interval (in microseconds) at which the screen state changes
+    async fn full_display_blink(&mut self, count: u32, interval_us: u32) {
+        match count == 0 {
+            true => loop {
+                self.delay_us(interval_us).await;
+                self.toggle_display().await;
+            },
+            false => {
+                for _ in 0..count * 2 {
+                    self.delay_us(interval_us).await;
+                    self.toggle_display().await;
+                }
+            }
+        }
+    }
+
+    /// Typewriter-style display
+    ///
+    /// # Arguments
+    ///
+    /// * `str` - string to display
+    /// * `delay_us` - The interval (in microseconds) of each character show up
+    async fn typewriter_write(&mut self, str: &str, delay_us: u32) {
+        for char in str.chars() {
+            self.delay_us(delay_us).await;
+            self.write_char_to_cur(char).await;
+        }
+    }
+
+    /// Split-Flap-style display
+    ///
+    /// # Arguments
+    ///
+    /// * `str` - string to display
+    /// * `fs` - flip style, see [FlipStyle]
+    /// * `max_flip_cnt` - The maximum number of times to flip the display before reaching the target character
+    /// * `per_flip_delay_us` - The delay (in microseconds) between each flip. It is recommended to set this value to at least `100_000`.
+    /// * `per_char_flip_delay_us` - Used in [FlipStyle::Sequential] mode, this is the time (in microseconds) to wait between flipping each character
+    async fn split_flap_write(
+        &mut self,
+        str: &str,
+        fs: FlipStyle,
+        max_flip_cnt: Option<u8>,
+        per_flip_delay_us: u32,
+        per_char_flip_delay_us: Option<u32>,
+    ) {
+        // Checking if all characters are suitable for split flap effect (should in ASCII 0x20 to 0x7D)
+        let test_result = str
+            .chars()
+            .all(|char| char.is_ascii() && (0x20 <= char as u8) && (char as u8 <= 0x7D));
+
+        assert!(test_result, "Currently only support ASCII 0x20 to 0x7D");
+
+        let mut cursor_state_changed = false;
+
+        // turn off cursor, since it will always shift to next position
+        if self.get_cursor_state() != State::Off {
+            self.set_cursor_state(State::Off).await;
+            cursor_state_changed = true;
+        }
+
+        match fs {
+            FlipStyle::Sequential => {
+                assert!(
+                    per_char_flip_delay_us.is_some(),
+                    "Should set some per char delay in Sequential Mode"
+                );
+                for char in str.chars() {
+                    let cur_byte = char as u8;
+
+                    let flap_start_byte = match max_flip_cnt {
+                        None => 0x20,
+                        Some(max_flip_cnt) => {
+                            if cur_byte - max_flip_cnt < 0x20 {
+                                0x20
+                            } else {
+                                cur_byte - max_flip_cnt
+                            }
+                        }
+                    };
+
+                    let cur_pos = self.get_cursor_pos();
+
+                    self.delay_us(per_char_flip_delay_us.unwrap()).await;
+                    for byte in flap_start_byte..=cur_byte {
+                        self.delay_us(per_flip_delay_us).await;
+                        self.write_byte_to_pos(byte, cur_pos).await;
+                    }
+                }
+            }
+            FlipStyle::Simultaneous => {
+                let min_char_byte = str.chars().min().unwrap() as u8;
+                let max_char_byte = str.chars().max().unwrap() as u8;
+                let str_len = str.chars().count();
+
+                let flap_start_byte = match max_flip_cnt {
+                    None => 0x20,
+                    Some(max_flip_cnt) => {
+                        if max_char_byte - min_char_byte > max_flip_cnt {
+                            min_char_byte
+                        } else if max_char_byte - max_flip_cnt < 0x20 {
+                            0x20
+                        } else {
+                            max_char_byte - max_flip_cnt
+                        }
+                    }
+                };
+
+                let start_pos = self.get_cursor_pos();
+
+                for cur_byte in flap_start_byte..=max_char_byte {
+                    self.delay_us(per_flip_delay_us).await;
+
+                    for (index, target_char) in str.char_indices() {
+                        if cur_byte <= target_char as u8 {
+                            let cur_pos = match self.get_direction() {
+                                MoveDirection::RightToLeft => {
+                                    self.calculate_pos_by_offset(start_pos, (-(index as i8), 0))
+                                }
+                                MoveDirection::LeftToRight => {
+                                    self.calculate_pos_by_offset(start_pos, (index as i8, 0))
+                                }
+                            };
+                            self.write_byte_to_pos(cur_byte, cur_pos).await;
+                        }
+                    }
+                }
+
+                // after the flip finished, we cannot ensure cursor position (since .filter() method)
+                // move cursor to string end
+                let end_pos = match self.get_direction() {
+                    MoveDirection::RightToLeft => {
+                        self.calculate_pos_by_offset(start_pos, (-((str_len) as i8), 0))
+                    }
+                    MoveDirection::LeftToRight => {
+                        self.calculate_pos_by_offset(start_pos, ((str_len as i8), 0))
+                    }
+                };
+                self.set_cursor_pos(end_pos).await;
+            }
+        }
+
+        // remember to restore cursor state
+        if cursor_state_changed {
+            self.set_cursor_state(State::On).await;
+        }
+    }
+
+    /// Move the display window to the specified position (measured from the upper-left corner of the display)
+    ///
+    /// # Arguments
+    ///
+    /// * `target_pos` - The target position of the display window
+    /// * `ms` - The style of movement, see [MoveStyle]
+    /// * `display_state_when_shift` - Whether to turn off the screen during the move
+    /// * `delay_us_per_step` - The delay (in microseconds) between each step of the move
+    async fn shift_display_to_pos(
+        &mut self,
+        target_pos: u8,
+        ms: MoveStyle,
+        display_state_when_shift: State,
+        delay_us_per_step: u32,
+    ) {
+        let before_pos = self.get_display_offset();
+
+        // if target position is current position, just return
+        if before_pos == target_pos {
+            return;
+        }
+
+        let line_capacity = self.get_line_capacity();
+
+        let before_state = self.get_display_state();
+
+        self.set_display_state(display_state_when_shift).await;
+
+        // calculate offset distance
+        let (distance, direction) = match ms {
+            MoveStyle::ForceMoveLeft => {
+                if target_pos < before_pos {
+                    (before_pos - target_pos, MoveDirection::RightToLeft)
+                } else {
+                    (
+                        line_capacity - (target_pos - before_pos),
+                        MoveDirection::RightToLeft,
+                    )
+                }
+            }
+
+            MoveStyle::ForceMoveRight => {
+                if target_pos > before_pos {
+                    (target_pos - before_pos, MoveDirection::LeftToRight)
+                } else {
+                    (
+                        line_capacity - (before_pos - target_pos),
+                        MoveDirection::LeftToRight,
+                    )
+                }
+            }
+
+            MoveStyle::NoCrossBoundary => {
+                if target_pos > before_pos {
+                    (target_pos - before_pos, MoveDirection::LeftToRight)
+                } else {
+                    (before_pos - target_pos, MoveDirection::RightToLeft)
+                }
+            }
+
+            MoveStyle::Shortest => {
+                if target_pos > before_pos {
+                    if target_pos - before_pos <= line_capacity / 2 {
+                        (target_pos - before_pos, MoveDirection::LeftToRight)
+                    } else {
+                        (
+                            line_capacity - (target_pos - before_pos),
+                            MoveDirection::RightToLeft,
+                        )
+                    }
+                } else {
+                    #[allow(clippy::collapsible_else_if)]
+                    if before_pos - target_pos <= line_capacity / 2 {
+                        (before_pos - target_pos, MoveDirection::RightToLeft)
+                    } else {
+                        (
+                            line_capacity - (before_pos - target_pos),
+                            MoveDirection::LeftToRight,
+                        )
+                    }
+                }
+            }
+        };
+
+        for _ in 0..distance {
+            self.delay_us(delay_us_per_step).await;
+            self.shift_cursor_or_display(ShiftType::CursorAndDisplay, direction).await;
+        }
+
+        // restore original display state
+        self.set_display_state(before_state).await;
+    }
+}

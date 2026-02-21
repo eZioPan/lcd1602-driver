@@ -1,17 +1,21 @@
 [package]
-name = "lcd1602-driver"
+name = "lcd1602-driver-async"
 authors = ["eZioPan <eziopan@qq.com>"]
 version = "0.3.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
-description = "A LCD1602 driver"
+description = "An async LCD1602 driver"
 homepage = "https://github.com/eZioPan/lcd1602-driver"
-documentation = "https://docs.rs/lcd1602-driver"
+documentation = "https://docs.rs/lcd1602-driver-async"
 repository = "https://github.com/eZioPan/lcd1602-driver"
 readme = "README.md"
-categories = ["embedded", "hardware-support", "no-std"]
+categories = ["embedded", "hardware-support", "no-std", "asynchronous"]
 keywords = ["lcd1602", "display"]
-rust-version = "1.81"
+
+[features]
+default = []
+simulator = []
 
 [dependencies]
 embedded-hal = "1"
+embedded-hal-async = "1"
