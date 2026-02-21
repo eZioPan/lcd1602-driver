@@ -12,7 +12,7 @@ where
     Delayer: DelayNs,
 {
     async fn set_backlight(&mut self, backlight: State) {
-        self.sender.set_actual_backlight(backlight);
+        self.sender.set_actual_backlight(backlight).await;
         self.state.set_backlight(backlight);
     }
 

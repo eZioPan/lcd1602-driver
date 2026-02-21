@@ -14,7 +14,7 @@
 //! to make sure LCD read our command precisely.  
 //! Thus [`I2cCommand`] will further convert to a three u8 data sequence or six u8 data sequence [`I2cRawSeq`] .
 
-use embedded_hal::i2c::{AddressMode, I2c};
+use embedded_hal_async::i2c::{AddressMode, I2c};
 use embedded_hal_async::delay::DelayNs;
 
 use crate::{
@@ -25,14 +25,22 @@ use crate::{
 use super::SendCommand;
 
 /// [`I2cSender`] is the I2C interface with an adapter board to drive LCD1602
-pub struct I2cSender<'a, I2cLcd: I2c<A>, A: AddressMode + Clone> {
+pub struct I2cSender<'a, I2cLcd, A>
+where
+    I2cLcd: I2c<A>,
+    A: AddressMode + Clone,
+{
     i2c: &'a mut I2cLcd,
     addr: A,
     first_command: bool,
     backlight_state: State,
 }
 
-impl<'a, I2cLcd: I2c<A>, A: AddressMode + Clone> I2cSender<'a, I2cLcd, A> {
+impl<'a, I2cLcd, A> I2cSender<'a, I2cLcd, A>
+where
+    I2cLcd: I2c<A>,
+    A: AddressMode + Clone,
+{
     /// Create a [`I2cSender`] driver
     pub fn new(i2c: &'a mut I2cLcd, addr: A) -> Self {
         Self {
@@ -51,7 +59,7 @@ where
     Delayer: DelayNs,
 {
     // set backlight should ALWAYS keep ENABLE pin at low voltage state
-    fn set_actual_backlight(&mut self, state: State) {
+    async fn set_actual_backlight(&mut self, state: State) {
         // PCF8574T use weak pull up as high voltage,
         // thus only ENABLE pin should be strictly set to low voltage.
         let mut i2c_raw_seq: u8 = 0b1111_1011;
@@ -63,23 +71,27 @@ where
 
         self.i2c
             .write(self.addr.clone(), &[i2c_raw_seq])
+            .await
             .expect("Failed to write backlight state to I2C");
+        <Self as SendCommand<Delayer, true>>::yield_now(self).await;
         self.backlight_state = state;
     }
 
-    fn get_actual_backlight(&mut self) -> State {
+    async fn get_actual_backlight(&mut self) -> State {
         let mut buf = [0u8];
         // just a read is sufficient get backlight state
         self.i2c
             .read(self.addr.clone(), &mut buf)
+            .await
             .expect("Failed to read backlight state from I2C");
+        <Self as SendCommand<Delayer, true>>::yield_now(self).await;
         match buf[0].check_bit(3) {
             BitState::Clear => State::Off,
             BitState::Set => State::On,
         }
     }
 
-    fn send(&mut self, lcd_command: Command) -> Option<u8> {
+    async fn send(&mut self, lcd_command: Command) -> Option<u8> {
         if self.first_command {
             assert!(
                 lcd_command.get_data().is_some(),
@@ -101,7 +113,9 @@ where
 
                     self.i2c
                         .write(self.addr.clone(), &raw_seq[0..len as usize])
+                        .await
                         .expect("Failed to write first command to I2C");
+                    <Self as SendCommand<Delayer, true>>::yield_now(self).await;
                 }
             }
 
@@ -135,7 +149,9 @@ where
                     let I2cRawSeq(len, raw_seq) = i2c_command.into();
                     self.i2c
                         .write(self.addr.clone(), &raw_seq[0..len as usize])
+                        .await
                         .expect("Failed to write command to I2C");
+                    <Self as SendCommand<Delayer, true>>::yield_now(self).await;
                 }
 
                 ReadWriteOp::Read => {
@@ -158,15 +174,22 @@ where
 
                     self.i2c
                         .write_read(self.addr.clone(), &raw_seq[0..2], &mut buf)
+                        .await
                         .expect("Failed to write_read I2C (first half)");
+                    <Self as SendCommand<Delayer, true>>::yield_now(self).await;
                     concat_buf[0] = buf[0];
 
                     self.i2c
                         .write_read(self.addr.clone(), &raw_seq[2..5], &mut buf)
+                        .await
                         .expect("Failed to write_read I2C (second half)");
+                    <Self as SendCommand<Delayer, true>>::yield_now(self).await;
+
                     self.i2c
                         .write(self.addr.clone(), &raw_seq[5..6])
+                        .await
                         .expect("Failed to write I2C (final step)");
+                    <Self as SendCommand<Delayer, true>>::yield_now(self).await;
                     concat_buf[1] = buf[0];
 
                     // Combine 2 halves of data into a whole one.

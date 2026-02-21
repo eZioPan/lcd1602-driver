@@ -33,7 +33,13 @@ impl<T> IfReadable<true> for T where T: OutputPin + InputPin {}
 pub trait SendCommand<Delayer: DelayNs, const READABLE: bool> {
     /// Parse a [`Command`] and sending data to hardware,
     /// and return the result value when [`Command`] is a [`ReadWriteOp::Read`](crate::command::ReadWriteOp::Read) command
-    fn send(&mut self, command: Command) -> Option<u8>;
+    async fn send(&mut self, command: Command) -> Option<u8>;
+
+    /// Yield control to the async runtime
+    ///
+    /// Override this method if you want to yield control during pin operations
+    /// (e.g., for simulation on PC). Default implementation is no-op.
+    async fn yield_now(&mut self) {}
 
     /// Wait specific duration, and send command
     async fn delay_and_send(
@@ -43,7 +49,7 @@ pub trait SendCommand<Delayer: DelayNs, const READABLE: bool> {
         delay_us: u32,
     ) -> Option<u8> {
         delayer.delay_us(delay_us).await;
-        self.send(command_set.into())
+        self.send(command_set.into()).await
     }
 
     /// Check LCD busy state, when LCD is idle, send the command
@@ -55,7 +61,7 @@ pub trait SendCommand<Delayer: DelayNs, const READABLE: bool> {
     ) -> Option<u8> {
         self.wait_for_idle(delayer, poll_interval_us).await;
 
-        let res = self.send(command_set.into());
+        let res = self.send(command_set.into()).await;
 
         // According to ST6077U datasheet, after CommandSet::ClearDisplay or CommandSet::ReturnHome,
         // we will need to manually wait at least 1.52 ms before sending other command.
@@ -74,7 +80,7 @@ pub trait SendCommand<Delayer: DelayNs, const READABLE: bool> {
     /// If LCD driver is Write-Only, this method will wait one `poll_interval_us` and return.
     async fn wait_for_idle(&mut self, delayer: &mut Delayer, poll_interval_us: u32) {
         if READABLE {
-            while self.check_busy() {
+            while self.check_busy().await {
                 delayer.delay_us(poll_interval_us).await;
             }
         } else {
@@ -85,10 +91,11 @@ pub trait SendCommand<Delayer: DelayNs, const READABLE: bool> {
     /// Check LCD busy state
     ///
     /// If LCD driver is Write-Only, this method will return false instantly.
-    fn check_busy(&mut self) -> bool {
+    async fn check_busy(&mut self) -> bool {
         if READABLE {
             let busy_state = self
                 .send(CommandSet::ReadBusyFlagAndAddress.into())
+                .await
                 .unwrap();
             matches!(busy_state.check_bit(7), BitState::Set)
         } else {
@@ -100,7 +107,7 @@ pub trait SendCommand<Delayer: DelayNs, const READABLE: bool> {
     ///
     /// Note:
     /// If a driver doesn't support read backlight state, just silently bypass it
-    fn get_actual_backlight(&mut self) -> State {
+    async fn get_actual_backlight(&mut self) -> State {
         State::default()
     }
 
@@ -109,5 +116,5 @@ pub trait SendCommand<Delayer: DelayNs, const READABLE: bool> {
     /// Note:
     /// If a driver doesn't support change backlight, just silently bypass it
     #[allow(unused_variables)]
-    fn set_actual_backlight(&mut self, backlight: State) {}
+    async fn set_actual_backlight(&mut self, backlight: State) {}
 }

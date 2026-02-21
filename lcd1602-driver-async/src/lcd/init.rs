@@ -261,7 +261,7 @@ where
             .await;
 
         // set backlight after LCD init
-        sender.set_actual_backlight(state.get_backlight());
+        sender.set_actual_backlight(state.get_backlight()).await;
 
         Lcd {
             sender,
